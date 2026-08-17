@@ -1,0 +1,6 @@
+{
+  "name": "MarketPulse",
+  "description": "Commodity and consumer market intelligence platform delivering real-time verified price tracking, multi-market comparison, and field agent verification across Nigerian hubs.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

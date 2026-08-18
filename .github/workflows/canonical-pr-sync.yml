@@ -1,0 +1,43 @@
+name: Prepare canonical MarketPulse build
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  prepare:
+    if: github.head_ref == 'chatgpt-canonical-sync-working'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: chatgpt-canonical-sync-working
+          fetch-depth: 0
+
+      - name: Replace prototype with canonical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/marketpulse-canonical
+          mkdir -p /tmp/marketpulse-canonical
+          unzip -q marketpulse_usable_auth_ready.zip -d /tmp/marketpulse-canonical
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/marketpulse-canonical/. .
+          rm -f .env
+
+      - name: Commit canonical source to PR branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "MarketPulse Sync"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: sync canonical MarketPulse auth profile build"
+          git push origin HEAD:chatgpt-canonical-sync-working

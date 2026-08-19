@@ -9,6 +9,16 @@
     window.setTimeout(() => setToasts((prev) => prev.filter((toast) => toast.id !== id)), 5000);
   }, []);
   const removeToast = useCallback((id: string) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
+  const addAuditLog = useCallback((log: Omit<AuditLogEntry, 'id' | 'timestamp' | 'actorId' | 'actorName'> & { actorId?: string; actorName?: string }) => {
+    const entry: AuditLogEntry = {
+      ...log,
+      id: `client-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      timestamp: new Date().toISOString(),
+      actorId: log.actorId || currentProfile?.id || 'current-user',
+      actorName: log.actorName || currentProfile?.full_name || currentProfile?.email || 'Current user',
+    };
+    setAuditLogs((prev) => [entry, ...prev].slice(0, 150));
+  }, [currentProfile]);
 
   useEffect(() => { document.documentElement.classList.toggle('dark', isDark); }, [isDark]);
   useEffect(() => {

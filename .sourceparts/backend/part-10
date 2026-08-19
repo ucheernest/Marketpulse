@@ -1,0 +1,93 @@
+  target_window_hours: number;
+  active_products: number;
+  active_markets: number;
+  active_field_agents: number;
+  recent_verified_observations: number;
+  recent_published_products: number;
+  qualified_products: number;
+  covered_markets: number;
+  launch_ready: boolean;
+  qualification_rule: string;
+  refreshed_at: string;
+}
+
+export interface ClientErrorEvent {
+  id: string;
+  user_id: string | null;
+  route: string;
+  error_name: string;
+  message: string;
+  stack_excerpt: string | null;
+  app_version: string | null;
+  user_agent: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  resolution_notes: string | null;
+}
+
+export interface PrivacyRequest {
+  id: string;
+  user_id: string;
+  request_type: 'access' | 'correction' | 'deletion' | 'export';
+  status: 'submitted' | 'in_review' | 'completed' | 'rejected';
+  request_notes: string | null;
+  admin_notes: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export async function loadPilotReadinessSnapshot(): Promise<PilotReadinessSnapshot | null> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured yet.');
+  const { data, error } = await supabase.from('pilot_readiness_snapshots').select('*').eq('id', true).maybeSingle();
+  if (error) throw error;
+  return data ? ({ ...data, readiness_score: asNumber(data.readiness_score) } as PilotReadinessSnapshot) : null;
+}
+
+export async function loadClientErrors(limit = 50): Promise<ClientErrorEvent[]> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured yet.');
+  const { data, error } = await supabase.from('client_error_events').select('id,user_id,route,error_name,message,stack_excerpt,app_version,user_agent,created_at,resolved_at,resolution_notes').order('created_at', { ascending: false }).limit(Math.min(Math.max(limit, 1), 200));
+  if (error) throw error;
+  return (data || []) as ClientErrorEvent[];
+}
+
+export async function resolveClientError(id: string, notes?: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured yet.');
+  const { error } = await supabase.from('client_error_events').update({ resolved_at: new Date().toISOString(), resolution_notes: notes?.trim() || 'Reviewed' }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function submitPrivacyRequest(requestType: PrivacyRequest['request_type'], notes?: string): Promise<PrivacyRequest> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured yet.');
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('Please sign in before submitting a privacy request.');
+  const { data, error } = await supabase.from('privacy_requests').insert({ user_id: user.id, request_type: requestType, request_notes: notes?.trim() || null }).select('*').single();
+  if (error) throw error;
+  return data as PrivacyRequest;
+}
+
+export async function loadMyPrivacyRequests(): Promise<PrivacyRequest[]> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured yet.');
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) return [];
+  const { data, error } = await supabase.from('privacy_requests').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data || []) as PrivacyRequest[];
+}
+
+export async function loadPrivacyRequestsForAdmin(limit = 100): Promise<PrivacyRequest[]> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured yet.');
+  const { data, error } = await supabase.from('privacy_requests').select('*').order('created_at', { ascending: false }).limit(Math.min(Math.max(limit, 1), 250));
+  if (error) throw error;
+  return (data || []) as PrivacyRequest[];
+}
+
+export async function updatePrivacyRequestStatus(id: string, status: PrivacyRequest['status'], adminNotes?: string): Promise<void> {

@@ -1,0 +1,50 @@
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured yet.');
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+    redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+  });
+  if (error) throw error;
+}
+
+export async function updatePasswordWithSupabase(newPassword: string): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured yet.');
+  if (newPassword.length < 8) throw new Error('Use a password with at least 8 characters.');
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
+export async function getAuthProviderAvailability(): Promise<{ google: boolean }> {
+  const config = getSupabasePublicConfig();
+  if (!config) return { google: false };
+  try {
+    const response = await fetch(`${config.url}/auth/v1/settings`, { headers: { apikey: config.publishableKey }, cache: 'no-store' });
+    if (!response.ok) return { google: false };
+    const settings = await response.json();
+    return { google: Boolean(settings?.external?.google) };
+  } catch { return { google: false }; }
+}
+
+export async function signInWithGoogleOAuth(): Promise<void> {
+  const supabase=getSupabase(); if(!supabase) throw new Error('Supabase is not configured yet.'); if(typeof window==='undefined') throw new Error('Google sign-in must be started in a browser.');
+  const { error } = await supabase.auth.signInWithOAuth({ provider:'google', options:{ redirectTo:window.location.origin, queryParams:{ prompt:'select_account' } } });
+  if(error) throw error;
+}
+
+export async function signInWithSupabase(email:string,pass:string) {
+  const supabase=getSupabase(); if(!supabase) throw new Error('Supabase is not configured yet.');
+  const {data,error}=await supabase.auth.signInWithPassword({email:email.trim().toLowerCase(),password:pass}); if(error) throw error;
+  const profile=await getAuthenticatedProfile(); if(profile&&!profile.is_active){await supabase.auth.signOut();throw new Error('This MarketPulse account is currently inactive.');}
+  if(profile) await supabase.rpc('touch_my_profile'); return {...data,profile};
+}
+
+export async function signOutSupabase(){const supabase=getSupabase();if(!supabase)return;const{error}=await supabase.auth.signOut();if(error)throw error;}
+
+export async function updateMyProfile(input:{full_name:string;phone_number?:string|null;preferred_city:string;gender?:ProfileGender|null;date_of_birth?:string|null;country?:string;state_of_residence?:string|null;bio?:string|null;avatar_url?:string|null;}):Promise<AuthenticatedProfile>{
+  const supabase=getSupabase();if(!supabase)throw new Error('Supabase is not configured yet.');const{data:{user},error:userError}=await supabase.auth.getUser();if(userError)throw userError;if(!user)throw new Error('You must be signed in to update your profile.');
+  const payload={full_name:input.full_name.trim(),phone_number:input.phone_number||null,preferred_city:input.preferred_city.trim()||'Port Harcourt',gender:input.gender||null,date_of_birth:input.date_of_birth||null,country:input.country?.trim()||'Nigeria',state_of_residence:input.state_of_residence?.trim()||null,bio:input.bio?.trim()||null,...(input.avatar_url!==undefined?{avatar_url:input.avatar_url}:{}),updated_at:new Date().toISOString()};
+  const{error}=await supabase.from('profiles').update(payload).eq('id',user.id);if(error)throw error;const refreshed=await getAuthenticatedProfile();if(!refreshed)throw new Error('Profile could not be reloaded after update.');return refreshed;
+}
+
+export async function uploadProfileAvatar(file: File): Promise<string> {
+  const supabase=getSupabase();if(!supabase)throw new Error('Supabase is not configured yet.');const{data:{user},error:userError}=await supabase.auth.getUser();if(userError)throw userError;if(!user)throw new Error('You must be signed in to upload a profile picture.');

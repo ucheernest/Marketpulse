@@ -1,0 +1,97 @@
+  const [exportModalDefaultCategory, setExportModalDefaultCategory] = useState<'verifications' | 'audit_logs' | 'price_index'>('verifications');
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  const [toasts, setToasts] = useState<ToastNotification[]>([]);
+
+  const addToast = useCallback((message: string, type: ToastNotification['type'] = 'info') => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setToasts((prev) => [...prev, { id, type, message }]);
+    window.setTimeout(() => setToasts((prev) => prev.filter((toast) => toast.id !== id)), 5000);
+  }, []);
+  const removeToast = useCallback((id: string) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
+
+  useEffect(() => { document.documentElement.classList.toggle('dark', isDark); }, [isDark]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const q = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    q.addEventListener('change', onChange);
+    return () => q.removeEventListener('change', onChange);
+  }, []);
+  const setThemeMode = (mode: ThemeMode) => { setThemeModeState(mode); setLocalData('theme_mode', mode); };
+
+  const refreshQueue = useCallback(async () => {
+    if (!currentProfile || currentRole !== 'agent') { setPendingOfflineQueue([]); return; }
+    setPendingOfflineQueue(await getOfflineSubmissionsQueue(currentProfile.id));
+  }, [currentProfile, currentRole]);
+  useEffect(() => { void refreshQueue(); }, [refreshQueue]);
+  useEffect(() => {
+    const online = () => { setIsOnline(true); setIsLowConnectivity(isLowBandwidthConnection()); };
+    const offline = () => setIsOnline(false);
+    window.addEventListener('online', online); window.addEventListener('offline', offline);
+    const conn = (navigator as any).connection;
+    const connectionChange = () => setIsLowConnectivity(isLowBandwidthConnection());
+    conn?.addEventListener?.('change', connectionChange);
+    return () => { window.removeEventListener('online', online); window.removeEventListener('offline', offline); conn?.removeEventListener?.('change', connectionChange); };
+  }, []);
+
+  const loadPublic = useCallback(async () => {
+    setDataLoading(true);
+    try {
+      const bundle = await loadPublicData(selectedCity);
+      setProducts(bundle.products); setMarkets(bundle.markets);
+      setLocalData('verified_products_cache', bundle.products); setLocalData('verified_markets_cache', bundle.markets);
+      setCacheMetadata(bundle.products.length, bundle.markets.length);
+      setLastCacheSync(new Date()); setDataError(null);
+    } catch (error: any) {
+      setDataError(error?.message || 'Verified market data could not be loaded.');
+    } finally { setDataLoading(false); }
+  }, [selectedCity]);
+
+  const refreshWorkspaces = useCallback(async (profile: AuthenticatedProfile | null) => {
+    if (!profile) {
+      setSubmissions([]); setAgentProfile(EMPTY_AGENT); setAdminKPIs(EMPTY_KPIS); setSystemAlerts([]); setAuditLogs([]);
+      return;
+    }
+    if (profile.role === 'field_agent') {
+      const workspace = await loadAgentWorkspace(profile);
+      setAgentProfile(workspace.profile); setSubmissions(workspace.submissions);
+      setAdminKPIs(EMPTY_KPIS); setSystemAlerts([]); setAuditLogs([]);
+    } else if (profile.role === 'verifier_admin' || profile.role === 'super_admin') {
+      const workspace = await loadAdminWorkspace();
+      setSubmissions(workspace.submissions); setAdminKPIs(workspace.kpis); setSystemAlerts(workspace.alerts); setAuditLogs(workspace.auditLogs);
+      setAgentProfile(EMPTY_AGENT);
+    } else {
+      setSubmissions([]); setAgentProfile(EMPTY_AGENT); setAdminKPIs(EMPTY_KPIS); setSystemAlerts([]); setAuditLogs([]);
+    }
+  }, []);
+
+  const refreshAuthProfile = useCallback(async (): Promise<AuthenticatedProfile | null> => {
+    if (!isSupabaseConfigured) { setAuthLoading(false); setCurrentProfile(null); setCurrentRole('consumer'); return null; }
+    try {
+      const profile = await getAuthenticatedProfile();
+      if (profile && !profile.is_active) {
+        await signOutSupabase();
+        setCurrentProfile(null); setCurrentRole('consumer'); setActiveViewState('home'); setSavedProductIds(getLocalData('anonymous_saved_products', []));
+        return null;
+      }
+      setCurrentProfile(profile);
+      if (!profile) { setCurrentRole('consumer'); setSavedProductIds(getLocalData('anonymous_saved_products', [])); return null; }
+      const uiRole = roleToUi(profile.role); setCurrentRole(uiRole);
+      if (profile.preferred_city) { setSelectedCityState(profile.preferred_city); setLocalData('selected_city', profile.preferred_city); }
+      setSavedProductIds(await loadSavedProductIds());
+      setActiveViewState((view) => {
+        const agentOnly = ['agent-dashboard','submit-price'].includes(view);
+        const adminOnly = ['admin-overview','admin-verification','admin-users','admin-catalog'].includes(view);
+        if (view === 'home' && uiRole !== 'consumer') return routeForRole(uiRole);
+        if (agentOnly && uiRole !== 'agent') return routeForRole(uiRole);
+        if (adminOnly && !['admin','super_admin'].includes(uiRole)) return routeForRole(uiRole);
+        if (['admin-users','admin-catalog'].includes(view) && uiRole !== 'super_admin') return routeForRole(uiRole);
+        return view;
+      });
+      await refreshWorkspaces(profile);
+      return profile;
+    } catch (error: any) {
+      console.warn('Unable to restore MarketPulse session:', error);
+      setCurrentProfile(null); setCurrentRole('consumer');
+      return null;

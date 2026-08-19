@@ -1,0 +1,33 @@
+
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Profile picture must be JPEG, PNG, or WebP.');
+  if (file.size > 5 * 1024 * 1024) throw new Error('Profile picture must be 5 MB or smaller.');
+  const extension=file.type==='image/png'?'png':file.type==='image/webp'?'webp':'jpg'; const path=`${user.id}/avatar.${extension}`;
+  const{error:uploadError}=await supabase.storage.from('profile-avatars').upload(path,file,{upsert:true,contentType:file.type,cacheControl:'3600'});if(uploadError)throw uploadError;
+  const{data}=supabase.storage.from('profile-avatars').getPublicUrl(path); const publicUrl=`${data.publicUrl}?v=${Date.now()}`;
+  const{error:updateError}=await supabase.from('profiles').update({avatar_url:publicUrl,updated_at:new Date().toISOString()}).eq('id',user.id);if(updateError)throw updateError;return publicUrl;
+}
+
+export async function listManageableUsers():Promise<ManagedUser[]>{
+  const supabase=getSupabase();if(!supabase)throw new Error('Supabase is not configured yet.');
+  const[profileRes,agentRes]=await Promise.all([supabase.from('profiles').select('id,email,full_name,role,preferred_city,is_active,avatar_url,phone_number,gender,date_of_birth,country,state_of_residence,bio,last_seen_at,created_at,terms_version,terms_accepted_at,privacy_version,privacy_accepted_at,auth_provider,email_confirmed_at').order('created_at',{ascending:false}),supabase.from('agents').select('id,user_id,agent_code,assigned_market_ids,reputation_score,is_field_active')]);
+  if(profileRes.error)throw profileRes.error;if(agentRes.error)throw agentRes.error;const byUser=new Map((agentRes.data||[]).map((agent:any)=>[agent.user_id,agent]));return(profileRes.data||[]).map((profile:any)=>({...profile,agent:byUser.get(profile.id)||null})) as ManagedUser[];
+}
+
+export async function manageUserRole(input:{targetUserId:string;newRole:Exclude<DatabaseRole,'super_admin'>;agentCode?:string|null;assignedMarketIds?:string[]|null;}){const supabase=getSupabase();if(!supabase)throw new Error('Supabase is not configured yet.');const{data,error}=await supabase.rpc('manage_user_role',{p_target_user_id:input.targetUserId,p_new_role:input.newRole,p_agent_code:input.agentCode||null,p_assigned_market_ids:input.assignedMarketIds||null});if(error)throw error;return data;}
+export async function manageUserStatus(targetUserId:string,isActive:boolean){const supabase=getSupabase();if(!supabase)throw new Error('Supabase is not configured yet.');const{data,error}=await supabase.rpc('manage_user_status',{p_target_user_id:targetUserId,p_is_active:isActive});if(error)throw error;return data;}
+export async function listActiveDatabaseMarkets():Promise<Array<{id:string;name:string;city:string;state:string}>>{const supabase=getSupabase();if(!supabase)throw new Error('Supabase is not configured yet.');const{data,error}=await supabase.from('markets').select('id,name,city,state').eq('is_active',true).order('name');if(error)throw error;return(data||[]) as Array<{id:string;name:string;city:string;state:string}>;}
+
+export async function loadAdminCatalog(): Promise<AdminCatalogBundle> {
+  const supabase=getSupabase();if(!supabase)throw new Error('Supabase is not configured yet.');
+  const[categoriesRes,brandsRes,packsRes,productsRes,aliasesRes,marketsRes]=await Promise.all([
+    supabase.from('categories').select('id,name').eq('is_active',true).order('sort_order'),
+    supabase.from('brands').select('id,name'),
+    supabase.from('pack_sizes').select('id,size_label,standard_unit,unit_multiplier'),
+    supabase.from('products').select('id,name,category_id,brand_id,pack_size_id,is_local_or_imported,is_active').order('name'),
+    supabase.from('product_aliases').select('product_id,alias'),
+    supabase.from('markets').select('id,name,city,state,address,latitude,longitude,geofence_radius_meters,operating_hours,is_active').order('city').order('name'),
+  ]);
+  const responses=[categoriesRes,brandsRes,packsRes,productsRes,aliasesRes,marketsRes];const err=responses.find((r)=>r.error)?.error;if(err)throw err;
+  const categories=(categoriesRes.data||[]) as Array<{id:string;name:string}>;const categoryMap=new Map(categories.map((x)=>[x.id,x.name]));const brandMap=new Map((brandsRes.data||[]).map((x:any)=>[x.id,x.name]));const packMap=new Map((packsRes.data||[]).map((x:any)=>[x.id,x]));const aliasMap=new Map<string,string[]>();(aliasesRes.data||[]).forEach((x:any)=>{const list=aliasMap.get(x.product_id)||[];list.push(x.alias);aliasMap.set(x.product_id,list);});
+  return {categories,products:(productsRes.data||[]).map((row:any)=>{const pack:any=packMap.get(row.pack_size_id);return{id:row.id,name:row.name,categoryId:row.category_id,categoryName:categoryMap.get(row.category_id)||'Uncategorized',brandName:row.brand_id?String(brandMap.get(row.brand_id)||''):'',packSizeLabel:pack?.size_label||'',standardUnit:pack?.standard_unit||'',unitMultiplier:asNumber(pack?.unit_multiplier,1),origin:row.is_local_or_imported||'Local',aliases:aliasMap.get(row.id)||[],isActive:Boolean(row.is_active)} as AdminCatalogProduct;}),markets:(marketsRes.data||[]).map((row:any)=>({id:row.id,name:row.name,city:row.city,state:row.state,address:row.address,latitude:asNumber(row.latitude),longitude:asNumber(row.longitude),geofenceRadiusMeters:Number(row.geofence_radius_meters||650),operatingHours:row.operating_hours||'',isActive:Boolean(row.is_active)}))};
+}

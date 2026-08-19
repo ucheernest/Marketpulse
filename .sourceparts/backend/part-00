@@ -1,0 +1,119 @@
+import { getSupabase, getSupabasePublicConfig } from './supabaseClient';
+import {
+  AdminKPIs,
+  AgentProfile,
+  AuditLogEntry,
+  FieldSubmission,
+  Market,
+  Product,
+  ProductCategory,
+  SystemAlert,
+} from '../types';
+
+export const SUPABASE_SCHEMA_SQL = `-- MarketPulse production schema is managed in Supabase project iqavukfmeahqnovrkcuo.\n-- Do not restore the original AI Studio prototype schema.`;
+
+export type DatabaseRole = 'public_user' | 'field_agent' | 'verifier_admin' | 'super_admin';
+export type ProfileGender = 'male' | 'female' | 'non_binary' | 'other' | 'prefer_not_to_say';
+
+export interface AuthenticatedProfile {
+  id: string;
+  email: string | null;
+  full_name: string;
+  role: DatabaseRole;
+  preferred_city: string;
+  is_active: boolean;
+  avatar_url: string | null;
+  phone_number: string | null;
+  gender: ProfileGender | null;
+  date_of_birth: string | null;
+  country: string;
+  state_of_residence: string | null;
+  bio: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+  terms_version: string | null;
+  terms_accepted_at: string | null;
+  privacy_version: string | null;
+  privacy_accepted_at: string | null;
+  auth_provider: string;
+  email_confirmed_at: string | null;
+}
+
+export interface ManagedUser extends AuthenticatedProfile {
+  agent?: {
+    id: string;
+    agent_code: string;
+    assigned_market_ids: string[];
+    reputation_score: number;
+    is_field_active: boolean;
+  } | null;
+}
+
+export interface AdminCatalogProduct {
+  id: string;
+  name: string;
+  categoryId: string;
+  categoryName: string;
+  brandName: string;
+  packSizeLabel: string;
+  standardUnit: string;
+  unitMultiplier: number;
+  origin: 'Local' | 'Imported' | 'Both';
+  aliases: string[];
+  isActive: boolean;
+}
+
+export interface AdminCatalogMarket {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  geofenceRadiusMeters: number;
+  operatingHours: string;
+  isActive: boolean;
+}
+
+export interface PriceAccuracyReport {
+  id: string;
+  productId: string;
+  productName: string;
+  marketId: string;
+  marketName: string;
+  reportedPrice: number;
+  reason: string;
+  notes: string | null;
+  status: 'under_investigation' | 'resolved' | 'dismissed';
+  createdAt: string;
+}
+
+export interface AdminCatalogBundle {
+  categories: Array<{ id: string; name: string }>;
+  products: AdminCatalogProduct[];
+  markets: AdminCatalogMarket[];
+}
+
+export const TERMS_VERSION = '2026-08';
+export const PRIVACY_VERSION = '2026-08';
+
+export interface PublicDataBundle {
+  products: Product[];
+  markets: Market[];
+}
+
+export interface AgentWorkspaceBundle {
+  profile: AgentProfile;
+  submissions: FieldSubmission[];
+}
+
+export interface AdminWorkspaceBundle {
+  submissions: FieldSubmission[];
+  kpis: AdminKPIs;
+  alerts: SystemAlert[];
+  auditLogs: AuditLogEntry[];
+}
+
+export interface ObservationSubmissionInput {
+  productId: string;

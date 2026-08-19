@@ -1,0 +1,100 @@
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import {
+  AdminKPIs,
+  AgentProfile,
+  AuditLogEntry,
+  DeviceLocation,
+  FieldSubmission,
+  Market,
+  Product,
+  ProductCategory,
+  SystemAlert,
+  ThemeMode,
+  UserRole,
+} from '../types';
+import { getLocalData, getSupabase, isSupabaseConfigured, setLocalData } from '../services/supabaseClient';
+import {
+  AuthenticatedProfile,
+  DatabaseRole,
+  getAuthenticatedProfile,
+  loadAdminWorkspace,
+  loadAgentWorkspace,
+  loadPublicData,
+  loadSavedProductIds,
+  reviewPriceObservation,
+  setSavedProduct,
+  signOutSupabase,
+  submitInaccuratePriceReport as submitInaccuratePriceReportBackend,
+  submitPriceObservation,
+} from '../services/backendService';
+import {
+  enqueueOfflineSubmission,
+  getCacheMetadata,
+  getOfflineSubmissionsQueue,
+  isLowBandwidthConnection,
+  PendingOfflineSubmission,
+  removeOfflineSubmission,
+  setCacheMetadata,
+  updateOfflineSubmission,
+} from '../services/offlineCache';
+import { requestBackgroundSync } from '../services/serviceWorkerRegistration';
+
+export type AppView =
+  | 'home'
+  | 'search'
+  | 'markets'
+  | 'saved'
+  | 'agent-dashboard'
+  | 'submit-price'
+  | 'admin-overview'
+  | 'admin-verification'
+  | 'admin-users'
+  | 'admin-catalog'
+  | 'profile';
+
+interface ToastNotification {
+  id: string;
+  type: 'success' | 'info' | 'warning' | 'error';
+  message: string;
+}
+
+const EMPTY_AGENT: AgentProfile = {
+  id: '', name: '', email: '', avatar: '', agentCode: '', tier: 'Field Agent', accuracyRate: 0,
+  totalSubmissions: 0, verifiedSubmissions: 0, rejectedSubmissions: 0, pendingVerificationsCount: 0,
+  completedChecksToday: 0, assignedMarkets: [], isFieldActive: false,
+};
+const EMPTY_KPIS: AdminKPIs = {
+  verifiedToday: 0, verifiedGrowthPercent: 0, pendingVerification: 0, activeAgents: 0,
+  regionsCovered: 0, averageFreshnessMinutes: 0, freshnessImprovementMinutes: 0, systemConfidenceScore: 0,
+};
+
+interface SubmitPriceInput {
+  productId: string;
+  productName: string;
+  marketId: string;
+  marketName: string;
+  price: number;
+  unit: string;
+  sellerStall: string;
+  evidenceFile: File | Blob;
+  evidenceMimeType?: string;
+  location: DeviceLocation;
+}
+
+interface AppContextType {
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
+  isDark: boolean;
+  isOnline: boolean;
+  isLowConnectivity: boolean;
+  pendingOfflineQueue: PendingOfflineSubmission[];
+  syncOfflineQueue: () => Promise<void>;
+  lastCacheSync: Date | null;
+  currentRole: UserRole;
+  currentProfile: AuthenticatedProfile | null;
+  isAuthenticated: boolean;
+  authLoading: boolean;
+  refreshAuthProfile: () => Promise<AuthenticatedProfile | null>;
+  logout: () => Promise<void>;
+  activeView: AppView;
+  setActiveView: (view: AppView) => void;

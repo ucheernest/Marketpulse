@@ -1,0 +1,45 @@
+      priceTrends: {
+        today: mapPoints(allTrendPoints.filter((point) => point._rawDate === new Date().toISOString().slice(0, 10))),
+        '7D': mapPoints(allTrendPoints.filter((point) => point._rawDate >= cutoff(7))),
+        '30D': mapPoints(allTrendPoints.filter((point) => point._rawDate >= cutoff(30))),
+        '3M': mapPoints(allTrendPoints),
+      },
+    };
+  });
+
+  const marketSnapshots = new Map<string, any[]>();
+  marketPrices.forEach((row: any) => { const list = marketSnapshots.get(row.market_id) || []; list.push(row); marketSnapshots.set(row.market_id, list); });
+
+  const markets: Market[] = rawMarkets.map((row: any) => {
+    const rows = marketSnapshots.get(row.id) || [];
+    const verifiedRows = rows.filter((item: any) => asNumber(item.average_price) > 0);
+    const newest = verifiedRows.map((item: any) => item.last_verified_at as string).filter(Boolean).sort().at(-1) || null;
+    const avgConfidence = verifiedRows.length ? verifiedRows.reduce((sum: number, item: any) => sum + asNumber(item.confidence_score), 0) / verifiedRows.length : 0;
+    return {
+      id:row.id, name:row.name, city:row.city, state:row.state, address:row.address, image:row.image_url||placeholderSvg(row.name,row.city,'market'),
+      healthScore:asNumber(row.health_score)||Math.round(avgConfidence), confidenceScore:Math.round(avgConfidence), productsCount:verifiedRows.length,
+      updatesToday:verifiedRows.filter((item:any)=>isSameUtcDay(item.last_verified_at)).length, lastUpdated:relativeTime(newest), coordinates:{lat:asNumber(row.latitude),lng:asNumber(row.longitude)},
+      openingHours:row.operating_hours||'Hours not published', description:`Verified price coverage for ${row.name}, ${row.city}.`, isActive:Boolean(row.is_active),
+    };
+  });
+  return { products, markets };
+}
+
+export async function getAuthenticatedProfile(): Promise<AuthenticatedProfile | null> {
+  const supabase=getSupabase(); if(!supabase) throw new Error('Supabase is not configured yet.');
+  const {data:{user},error:userError}=await supabase.auth.getUser(); if(userError) throw userError; if(!user) return null;
+  const {data:profile,error:profileError}=await supabase.from('profiles').select('id,email,full_name,role,preferred_city,is_active,avatar_url,phone_number,gender,date_of_birth,country,state_of_residence,bio,last_seen_at,created_at,terms_version,terms_accepted_at,privacy_version,privacy_accepted_at,auth_provider,email_confirmed_at').eq('id',user.id).single();
+  if(profileError) throw profileError; return profile as AuthenticatedProfile;
+}
+
+export async function signUpWithSupabase(email:string,pass:string,fullName:string,city='Port Harcourt',legal?:{acceptTerms:boolean;acceptPrivacy:boolean}) {
+  const supabase=getSupabase(); if(!supabase) throw new Error('Supabase is not configured yet.');
+  if(!legal?.acceptTerms||!legal?.acceptPrivacy) throw new Error('You must accept the Terms of Use and acknowledge the Privacy Notice.');
+  const {data,error}=await supabase.auth.signUp({email:email.trim().toLowerCase(),password:pass,options:{data:{full_name:fullName.trim(),city,accept_terms:true,terms_version:TERMS_VERSION,accept_privacy:true,privacy_version:PRIVACY_VERSION},emailRedirectTo:typeof window!=='undefined'?window.location.origin:undefined}});
+  if(error) throw error; return data;
+}
+
+export async function acceptLegalTerms():Promise<void>{const supabase=getSupabase();if(!supabase)throw new Error('Supabase is not configured yet.');const{error}=await supabase.rpc('accept_legal_terms',{p_terms_version:TERMS_VERSION,p_privacy_version:PRIVACY_VERSION});if(error)throw error;}
+export async function resendSignupConfirmation(email:string):Promise<void>{const supabase=getSupabase();if(!supabase)throw new Error('Supabase is not configured yet.');const{error}=await supabase.auth.resend({type:'signup',email:email.trim().toLowerCase(),options:{emailRedirectTo:typeof window!=='undefined'?window.location.origin:undefined}});if(error)throw error;}
+
+export async function requestPasswordReset(email: string): Promise<void> {

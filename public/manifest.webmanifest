@@ -1,0 +1,20 @@
+{
+  "name": "MarketPulse Nigeria",
+  "short_name": "MarketPulse",
+  "description": "Verified Nigerian market-price intelligence for smarter shopping decisions.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8faf8",
+  "theme_color": "#008751",
+  "orientation": "portrait-primary",
+  "categories": ["finance", "shopping", "utilities"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

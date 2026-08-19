@@ -1,0 +1,14 @@
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured yet.');
+  const completed = status === 'completed' || status === 'rejected';
+  const { error } = await supabase
+    .from('privacy_requests')
+    .update({
+      status,
+      admin_notes: adminNotes?.trim() || null,
+      completed_at: completed ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  if (error) throw error;
+}

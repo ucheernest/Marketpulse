@@ -1,15 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// MarketPulse production Supabase configuration.
-// Publishable keys are designed for browser clients; authorization remains enforced by RLS.
 const DEFAULT_SUPABASE_URL = 'https://iqavukfmeahqnovrkcuo.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_5RovDlCqQdsibyqQDVo2BA_7uRCmAoO';
 
 const rawSupabaseUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
-const rawSupabaseKey =
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+const rawSupabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 
 function normalizeSupabaseUrl(value: string): string {
   const trimmed = value.trim().replace(/\/+$/, '');
@@ -27,20 +22,14 @@ function normalizeSupabaseUrl(value: string): string {
 
 const supabaseUrl = normalizeSupabaseUrl(rawSupabaseUrl);
 const supabasePublishableKey = rawSupabaseKey.trim();
-
 let supabaseInstance: SupabaseClient | null = null;
 
 export function getSupabase(): SupabaseClient | null {
-  if (!supabaseUrl || !supabasePublishableKey) {
-    return null;
-  }
+  if (!supabaseUrl || !supabasePublishableKey) return null;
   if (!supabaseInstance) {
     try {
       supabaseInstance = createClient(supabaseUrl, supabasePublishableKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-        },
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
       });
     } catch (err) {
       console.warn('Failed to initialize Supabase client:', err);
@@ -51,13 +40,12 @@ export function getSupabase(): SupabaseClient | null {
 }
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKey);
+export function getSupabasePublicConfig(): { url: string; publishableKey: string } | null {
+  if (!supabaseUrl || !supabasePublishableKey) return null;
+  return { url: supabaseUrl, publishableKey: supabasePublishableKey };
+}
 
-/**
- * Local Storage Persistence Layer with BroadcastChannel Real-time sync
- * Ensures the app works instantly out-of-the-box in all environments.
- */
 const STORAGE_PREFIX = 'marketpulse_';
-
 export function getLocalData<T>(key: string, fallback: T): T {
   try {
     const item = localStorage.getItem(`${STORAGE_PREFIX}${key}`);
@@ -71,7 +59,6 @@ export function getLocalData<T>(key: string, fallback: T): T {
 export function setLocalData<T>(key: string, value: T): void {
   try {
     localStorage.setItem(`${STORAGE_PREFIX}${key}`, JSON.stringify(value));
-    // Broadcast change to other tabs or listeners if BroadcastChannel is supported
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       const channel = new BroadcastChannel('marketpulse_sync');
       channel.postMessage({ key, timestamp: Date.now() });

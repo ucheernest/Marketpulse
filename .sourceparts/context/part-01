@@ -1,0 +1,101 @@
+  selectedCity: string;
+  setSelectedCity: (city: string) => void;
+  products: Product[];
+  markets: Market[];
+  submissions: FieldSubmission[];
+  agentProfile: AgentProfile;
+  adminKPIs: AdminKPIs;
+  systemAlerts: SystemAlert[];
+  auditLogs: AuditLogEntry[];
+  addAuditLog: (log: Omit<AuditLogEntry, 'id' | 'timestamp' | 'actorId' | 'actorName'> & { actorId?: string; actorName?: string }) => void;
+  savedProductIds: string[];
+  dataLoading: boolean;
+  dataError: string | null;
+  refreshData: () => Promise<void>;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  selectedCategory: ProductCategory | 'All';
+  setSelectedCategory: (cat: ProductCategory | 'All') => void;
+  selectedOriginFilter: 'All' | 'Local' | 'Imported';
+  setSelectedOriginFilter: (origin: 'All' | 'Local' | 'Imported') => void;
+  selectedSizeFilter: string;
+  setSelectedSizeFilter: (size: string) => void;
+  selectedSort: 'price_asc' | 'price_desc' | 'confidence' | 'recent';
+  setSelectedSort: (sort: 'price_asc' | 'price_desc' | 'confidence' | 'recent') => void;
+  selectedProduct: Product | null;
+  openProductDetail: (product: Product) => void;
+  closeProductDetail: () => void;
+  selectedMarket: Market | null;
+  openMarketDetail: (market: Market) => void;
+  closeMarketDetail: () => void;
+  activeSubmissionDetail: FieldSubmission | null;
+  setActiveSubmissionDetail: (sub: FieldSubmission | null) => void;
+  reportModalProduct: Product | null;
+  openReportModal: (product: Product) => void;
+  closeReportModal: () => void;
+  isExportModalOpen: boolean;
+  exportModalDefaultCategory: 'verifications' | 'audit_logs' | 'price_index';
+  openExportModal: (category?: 'verifications' | 'audit_logs' | 'price_index') => void;
+  closeExportModal: () => void;
+  toggleSaveProduct: (productId: string) => Promise<void>;
+  isProductSaved: (productId: string) => boolean;
+  submitPriceReport: (data: SubmitPriceInput) => Promise<void>;
+  approveSubmission: (id: string, reason?: string, notes?: string) => Promise<void>;
+  rejectSubmission: (id: string, reason?: string, notes?: string) => Promise<void>;
+  requestRecheckSubmission: (id: string, reason?: string, notes?: string) => Promise<void>;
+  submitInaccuratePriceReport: (data: { productId: string; marketId: string; reportedPrice: number; reason: string; notes?: string }) => Promise<void>;
+  toasts: ToastNotification[];
+  addToast: (message: string, type?: ToastNotification['type']) => void;
+  removeToast: (id: string) => void;
+  isSupabaseActive: boolean;
+  isAuthModalOpen: boolean;
+  isPasswordRecovery: boolean;
+  finishPasswordRecovery: () => void;
+  openAuthModal: () => void;
+  closeAuthModal: () => void;
+}
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+const roleToUi = (role: DatabaseRole): UserRole =>
+  role === 'field_agent' ? 'agent' : role === 'verifier_admin' ? 'admin' : role === 'super_admin' ? 'super_admin' : 'consumer';
+const routeForRole = (role: UserRole): AppView =>
+  role === 'agent' ? 'agent-dashboard' : role === 'admin' || role === 'super_admin' ? 'admin-overview' : 'home';
+
+export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getLocalData<ThemeMode>('theme_mode', 'system'));
+  const [systemDark, setSystemDark] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const isDark = themeMode === 'dark' || (themeMode === 'system' && systemDark);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
+  const [isLowConnectivity, setIsLowConnectivity] = useState(() => isLowBandwidthConnection());
+  const [pendingOfflineQueue, setPendingOfflineQueue] = useState<PendingOfflineSubmission[]>([]);
+  const [lastCacheSync, setLastCacheSync] = useState<Date | null>(() => {
+    const m = getCacheMetadata(); return m ? new Date(m.lastSyncTimestamp) : null;
+  });
+
+  const [currentProfile, setCurrentProfile] = useState<AuthenticatedProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const [currentRole, setCurrentRole] = useState<UserRole>('consumer');
+  const [activeView, setActiveViewState] = useState<AppView>('home');
+  const [selectedCity, setSelectedCityState] = useState(() => getLocalData('selected_city', 'Port Harcourt'));
+  const [products, setProducts] = useState<Product[]>(() => getLocalData<Product[]>('verified_products_cache', []));
+  const [markets, setMarkets] = useState<Market[]>(() => getLocalData<Market[]>('verified_markets_cache', []));
+  const [submissions, setSubmissions] = useState<FieldSubmission[]>([]);
+  const [agentProfile, setAgentProfile] = useState<AgentProfile>(EMPTY_AGENT);
+  const [adminKPIs, setAdminKPIs] = useState<AdminKPIs>(EMPTY_KPIS);
+  const [systemAlerts, setSystemAlerts] = useState<SystemAlert[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [savedProductIds, setSavedProductIds] = useState<string[]>(() => getLocalData<string[]>('anonymous_saved_products', []));
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<ProductCategory | 'All'>('All');
+  const [selectedOriginFilter, setSelectedOriginFilter] = useState<'All' | 'Local' | 'Imported'>('All');
+  const [selectedSizeFilter, setSelectedSizeFilter] = useState('All');
+  const [selectedSort, setSelectedSort] = useState<'price_asc' | 'price_desc' | 'confidence' | 'recent'>('confidence');
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
+  const [activeSubmissionDetail, setActiveSubmissionDetail] = useState<FieldSubmission | null>(null);
+  const [reportModalProduct, setReportModalProduct] = useState<Product | null>(null);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);

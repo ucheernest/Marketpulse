@@ -72,7 +72,7 @@ export const BottomNav: React.FC = () => {
     );
   }
 
-  if (currentRole === 'admin') {
+  if (currentRole === 'admin' || currentRole === 'super_admin') {
     return (
       <nav
         id="admin-bottom-nav"

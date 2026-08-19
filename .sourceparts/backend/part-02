@@ -1,0 +1,68 @@
+        .select('product_id,city,price_date,average_price,low_price,high_price,observation_count')
+        .eq('city', city)
+        .gte('price_date', new Date(Date.now() - 93 * 86_400_000).toISOString().slice(0, 10))
+        .order('price_date', { ascending: true }),
+    ]);
+
+  const results = [categoriesRes, brandsRes, packSizesRes, productsRes, aliasesRes, marketsRes, cityPricesRes, marketPricesRes, historyRes];
+  const firstError = results.find((res) => res.error)?.error;
+  if (firstError) throw firstError;
+
+  const categories = categoriesRes.data || [];
+  const brands = brandsRes.data || [];
+  const packSizes = packSizesRes.data || [];
+  const rawProducts = productsRes.data || [];
+  const aliases = aliasesRes.data || [];
+  const rawMarkets = marketsRes.data || [];
+  const cityPrices = cityPricesRes.data || [];
+  const marketPrices = marketPricesRes.data || [];
+  const history = historyRes.data || [];
+
+  const categoryById = new Map(categories.map((row: any) => [row.id, row]));
+  const brandById = new Map(brands.map((row: any) => [row.id, row]));
+  const packById = new Map(packSizes.map((row: any) => [row.id, row]));
+  const aliasByProduct = new Map<string, string[]>();
+  aliases.forEach((row: any) => {
+    const list = aliasByProduct.get(row.product_id) || [];
+    list.push(row.alias);
+    aliasByProduct.set(row.product_id, list);
+  });
+  const cityPriceByProduct = new Map(cityPrices.map((row: any) => [row.product_id, row]));
+  const marketById = new Map(rawMarkets.map((row: any) => [row.id, row]));
+  const marketPriceByProduct = new Map<string, any[]>();
+  marketPrices.forEach((row: any) => { const list = marketPriceByProduct.get(row.product_id) || []; list.push(row); marketPriceByProduct.set(row.product_id, list); });
+  const historyByProduct = new Map<string, any[]>();
+  history.forEach((row: any) => { const list = historyByProduct.get(row.product_id) || []; list.push(row); historyByProduct.set(row.product_id, list); });
+
+  const products: Product[] = rawProducts.map((row: any) => {
+    const categoryRow: any = categoryById.get(row.category_id);
+    const brandRow: any = row.brand_id ? brandById.get(row.brand_id) : undefined;
+    const packRow: any = row.pack_size_id ? packById.get(row.pack_size_id) : undefined;
+    const current: any = cityPriceByProduct.get(row.id);
+    const productMarketRows = [...(marketPriceByProduct.get(row.id) || [])].sort((a, b) => asNumber(a.average_price) - asNumber(b.average_price));
+    const productHistoryRows = historyByProduct.get(row.id) || [];
+    const categoryName = KNOWN_CATEGORIES.has(categoryRow?.name) ? (categoryRow.name as ProductCategory) : CATEGORY_FALLBACK;
+    const verifiedAt = current?.last_verified_at || null;
+    const confidenceScore = asNumber(current?.confidence_score);
+    const hasVerifiedPrice = Boolean(current && asNumber(current.average_price) > 0 && verifiedAt);
+
+    const allTrendPoints = productHistoryRows.map((point: any) => ({
+      date: new Date(`${point.price_date}T12:00:00`).toLocaleDateString('en-NG', { month: 'short', day: 'numeric' }),
+      price: asNumber(point.average_price), avgPrice: asNumber(point.average_price), lowPrice: asNumber(point.low_price), highPrice: asNumber(point.high_price), observationCount: Number(point.observation_count || 0), _rawDate: point.price_date as string,
+    }));
+    const cutoff = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+    const mapPoints = (points: typeof allTrendPoints) => points.map(({ _rawDate, ...rest }) => rest);
+    const marketRows = productMarketRows.map((marketRow: any, index: number) => {
+      const market: any = marketById.get(marketRow.market_id);
+      return { marketId:marketRow.market_id, marketName:marketRow.market_name, city:marketRow.city, state:market?.state||'Rivers State', price:asNumber(marketRow.average_price), lowPrice:asNumber(marketRow.low_price), highPrice:asNumber(marketRow.high_price), observationCount:Number(marketRow.observation_count||0), confidenceScore:asNumber(marketRow.confidence_score), isLowest:index===0, lastVerified:relativeTime(marketRow.last_verified_at) };
+    });
+
+    return {
+      id:row.id, name:row.name, brand:brandRow?.name||undefined, category:categoryName, categorySlug:categoryRow?.slug||categoryName.toLowerCase().replace(/\s+/g,'-'),
+      image:row.image_url||placeholderSvg(row.name,packRow?.size_label||row.unit,'product'), unit:packRow?.size_label||row.unit, unitWeight:packRow?.size_label||row.unit, sizeOption:packRow?.size_label||row.unit,
+      isLocalOrImported:row.is_local_or_imported||'Local', aliases:aliasByProduct.get(row.id)||[], currentAvgPrice:hasVerifiedPrice?asNumber(current.average_price):0,
+      priceChangePercent:hasVerifiedPrice?asNumber(current.price_change_percent):0, priceChangeDirection:hasVerifiedPrice?current.price_change_direction||'neutral':'neutral',
+      priceLow:hasVerifiedPrice?asNumber(current.low_price):0, priceHigh:hasVerifiedPrice?asNumber(current.high_price):0, lastVerified:relativeTime(verifiedAt), lastVerifiedAt:verifiedAt,
+      confidence:confidenceLabel(confidenceScore,verifiedAt), confidenceScore:hasVerifiedPrice?confidenceScore:0, observationsCount:hasVerifiedPrice?Number(current.observation_count||0):0, marketsCount:hasVerifiedPrice?Number(current.market_count||0):0,
+      insight:row.market_insight||(hasVerifiedPrice?`Based on verified observations in ${city}.`:`No verified price observations have been published for ${row.name} in ${city} yet.`),
+      hasVerifiedPrice, marketPrices:marketRows,

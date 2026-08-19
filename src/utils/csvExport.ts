@@ -1,22 +1,4 @@
-import { FieldSubmission, Product, Market } from '../types';
-
-export interface AuditLogEntry {
-  id: string;
-  timestamp: string;
-  actorId: string;
-  actorName: string;
-  actorRole: string;
-  action: string;
-  entityType: 'submission' | 'product' | 'market' | 'agent' | 'system';
-  entityId: string;
-  entityName: string;
-  marketName?: string;
-  city?: string;
-  status: 'SUCCESS' | 'WARNING' | 'ALERT' | 'INFO';
-  details: string;
-  confidenceScore?: number;
-  price?: number;
-}
+import { AuditLogEntry, FieldSubmission, Product, Market } from '../types';
 
 /**
  * Escapes values for RFC 4180 compliant CSV output

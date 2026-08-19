@@ -1,0 +1,11 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+# Generated from versioned .sourceparts by npm lifecycle scripts
+src/context/AppContext.tsx
+src/services/backendService.ts

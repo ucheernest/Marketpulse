@@ -1,0 +1,57 @@
+      if (event.data?.type === 'TRIGGER_OFFLINE_SYNC' && navigator.onLine) void syncOfflineQueue();
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [syncOfflineQueue]);
+
+  const submitPriceReport = async (data: SubmitPriceInput) => {
+    if (!currentProfile || currentRole !== 'agent') throw new Error('Field-agent login is required.');
+    if (!data.evidenceFile || data.evidenceFile.size === 0) throw new Error('A market evidence photo is required.');
+    if (!Number.isFinite(data.location.lat) || !Number.isFinite(data.location.lng)) throw new Error('A real device location is required.');
+    if (!navigator.onLine) {
+      await enqueueOfflineSubmission(currentProfile.id, { productId:data.productId, productName:data.productName, marketId:data.marketId, marketName:data.marketName, price:data.price, unit:data.unit, sellerStall:data.sellerStall, location:data.location, evidenceBlob:data.evidenceFile, evidenceMimeType:data.evidenceMimeType||data.evidenceFile.type||'image/jpeg' });
+      await refreshQueue(); await requestBackgroundSync(); addToast('Observation saved securely on this device and will sync when connectivity returns.', 'success'); return;
+    }
+    await submitPriceObservation({ productId:data.productId, marketId:data.marketId, price:data.price, unit:data.unit, sellerStall:data.sellerStall, location:data.location, evidenceFile:data.evidenceFile, evidenceMimeType:data.evidenceMimeType });
+    await refreshWorkspaces(currentProfile); addToast('Price observation submitted for independent verification.', 'success');
+  };
+
+  const review = async (id: string, action: 'approved'|'rejected'|'recheck_requested', reason?: string, notes?: string) => {
+    if (!currentProfile || !['admin','super_admin'].includes(currentRole)) throw new Error('Verifier/admin access is required.');
+    await reviewPriceObservation(id, action, reason || null, notes || null); await Promise.all([refreshWorkspaces(currentProfile), loadPublic()]); setActiveSubmissionDetail(null);
+  };
+
+  const toggleSaveProduct = async (productId: string) => {
+    const shouldSave = !savedProductIds.includes(productId); setSavedProductIds((prev) => shouldSave ? [...prev, productId] : prev.filter((id) => id !== productId));
+    if (currentProfile) { try { await setSavedProduct(productId, shouldSave); } catch (error: any) { addToast(error?.message || 'Could not update saved products.', 'error'); await refreshAuthProfile(); } }
+    else { const next = shouldSave ? [...savedProductIds, productId] : savedProductIds.filter((id) => id !== productId); setLocalData('anonymous_saved_products', next); }
+  };
+
+  const submitInaccuratePriceReport = async (data: { productId:string; marketId:string; reportedPrice:number; reason:string; notes?:string }) => {
+    if (!currentProfile) { setIsAuthModalOpen(true); throw new Error('Please sign in before reporting an inaccurate price.'); }
+    await submitInaccuratePriceReportBackend(data); setReportModalProduct(null); addToast('Report submitted for review. It does not directly change the public price.', 'success');
+  };
+
+  const value: AppContextType = {
+    themeMode,setThemeMode,isDark,isOnline,isLowConnectivity,pendingOfflineQueue,syncOfflineQueue,lastCacheSync,
+    currentRole,currentProfile,isAuthenticated:Boolean(currentProfile),authLoading,refreshAuthProfile,logout,
+    activeView,setActiveView,selectedCity,setSelectedCity,products,markets,submissions,agentProfile,adminKPIs,
+    systemAlerts,auditLogs,addAuditLog,savedProductIds,dataLoading,dataError,refreshData,
+    searchQuery,setSearchQuery,selectedCategory,setSelectedCategory,selectedOriginFilter,setSelectedOriginFilter,
+    selectedSizeFilter,setSelectedSizeFilter,selectedSort,setSelectedSort,
+    selectedProduct,openProductDetail:setSelectedProduct,closeProductDetail:()=>setSelectedProduct(null),
+    selectedMarket,openMarketDetail:setSelectedMarket,closeMarketDetail:()=>setSelectedMarket(null),
+    activeSubmissionDetail,setActiveSubmissionDetail,reportModalProduct,openReportModal:setReportModalProduct,
+    closeReportModal:()=>setReportModalProduct(null),isExportModalOpen,exportModalDefaultCategory,
+    openExportModal:(category='verifications')=>{setExportModalDefaultCategory(category);setIsExportModalOpen(true);},
+    closeExportModal:()=>setIsExportModalOpen(false),toggleSaveProduct,isProductSaved:(id)=>savedProductIds.includes(id),
+    submitPriceReport,approveSubmission:(id,reason,notes)=>review(id,'approved',reason,notes),rejectSubmission:(id,reason,notes)=>review(id,'rejected',reason,notes),
+    requestRecheckSubmission:(id,reason,notes)=>review(id,'recheck_requested',reason,notes),submitInaccuratePriceReport,
+    toasts,addToast,removeToast,isSupabaseActive:isSupabaseConfigured,isAuthModalOpen,isPasswordRecovery,
+    finishPasswordRecovery:()=>{setIsPasswordRecovery(false);setIsAuthModalOpen(false);},
+    openAuthModal:()=>setIsAuthModalOpen(true),closeAuthModal:()=>{if(!isPasswordRecovery)setIsAuthModalOpen(false);},
+  };
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+};
+
+export const useApp = () => { const context=useContext(AppContext); if(!context) throw new Error('useApp must be used inside AppProvider'); return context; };

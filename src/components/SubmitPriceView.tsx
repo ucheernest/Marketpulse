@@ -1,463 +1,205 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Camera, CheckCircle2, LocateFixed, MapPin, Send, ShieldAlert, WifiOff, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { uploadEvidencePhoto } from '../services/backendService';
-import { BulkObservationFlow } from './BulkObservationFlow';
-import {
-  ArrowLeft,
-  Camera,
-  Upload,
-  MapPin,
-  Clock,
-  AlertTriangle,
-  CheckCircle2,
-  Image as ImageIcon,
-  Check,
-  Building2,
-  Store,
-  DollarSign,
-  Layers,
-  Sparkles,
-  FileSpreadsheet,
-} from 'lucide-react';
+import { DeviceLocation } from '../types';
 
 export const SubmitPriceView: React.FC = () => {
-  const {
-    products,
-    markets,
-    selectedCity,
-    submitPriceReport,
-    setActiveView,
-    addToast,
-    agentProfile,
-    isOnline,
-    isLowConnectivity,
-  } = useApp();
+  const { products, markets, agentProfile, setActiveView, submitPriceReport, addToast, isOnline, isLowConnectivity } = useApp();
+  const assignedIds = useMemo(() => new Set(agentProfile.assignedMarkets.map((m) => m.id)), [agentProfile.assignedMarkets]);
+  const assignedMarkets = useMemo(() => markets.filter((m) => assignedIds.has(m.id)), [markets, assignedIds]);
 
-  const [submissionMode, setSubmissionMode] = useState<'single' | 'bulk'>('single');
+  const [productId, setProductId] = useState('');
+  const [marketId, setMarketId] = useState('');
+  const [price, setPrice] = useState('');
+  const [sellerStall, setSellerStall] = useState('');
+  const [location, setLocation] = useState<DeviceLocation | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  const [productId, setProductId] = useState('mama-gold-rice-50kg');
-  const [productName, setProductName] = useState('Mama Gold Rice (50kg)');
-  const [marketId, setMarketId] = useState('mile-3-market');
-  const [marketName, setMarketName] = useState('Mile 3 Market');
-  const [sellerStall, setSellerStall] = useState('Mama Joy / Stall 42');
-  const [price, setPrice] = useState<number>(78200);
-  const [quantity, setQuantity] = useState<number>(1);
-  const [unit, setUnit] = useState<string>('50kg Bag');
-  const [photoPreview, setPhotoPreview] = useState<string>(
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuAYkZdGqfLDyWMwVkHWY9jVke68rbpKstU6_ExyLHjNJHUwRatSlfaDoBG7GQUumsVcM6g39B1hTthgSsUqtcQVASYFM42zQA2xbyPvPrG5Pl7fsONd199psmdp0FWcCw2COY3OoeYVbYWCqYoMJ1VIA78IJNYDrPXxVecBRm8ERaFiP63b5xoioUj1ngqgj0Ry6v72pN37Kdam85ST0D9q5IY6O7xFRgLOeptfZFlAbyaDvVc_WHie-Q'
-  );
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  useEffect(() => { if (!productId && products[0]) setProductId(products[0].id); }, [products, productId]);
+  useEffect(() => {
+    if (!marketId && assignedMarkets[0]) setMarketId(assignedMarkets[0].id);
+    if (marketId && !assignedIds.has(marketId)) setMarketId(assignedMarkets[0]?.id || '');
+  }, [assignedMarkets, assignedIds, marketId]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  useEffect(() => {
+    if (cameraOpen && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      void videoRef.current.play().catch(() => undefined);
+    }
+  }, [cameraOpen]);
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  }, []);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const product = products.find((p) => p.id === productId);
+  const market = assignedMarkets.find((m) => m.id === marketId);
+  const numericPrice = Number(price);
+  const deviation = product?.hasVerifiedPrice && numericPrice > 0
+    ? Math.abs(numericPrice - product.currentAvgPrice) / product.currentAvgPrice * 100
+    : 0;
 
-  // Check baseline price for anomaly warning
-  const matchedProduct = products.find(
-    (p) => p.id === productId || p.name.toLowerCase() === productName.toLowerCase()
-  );
-  const baseline = matchedProduct?.currentAvgPrice || 78200;
-  const isAnomaly = price > 0 && Math.abs(price - baseline) / baseline > 0.25;
+  const captureLocation = () => {
+    setLocationError(null);
+    if (!navigator.geolocation) { setLocationError('This device/browser does not provide location services.'); return; }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracyMeters: Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : null, capturedAt: new Date(pos.timestamp || Date.now()).toISOString() });
+        setLocating(false);
+      },
+      (err) => { setLocationError(err.message || 'Location permission was not granted.'); setLocating(false); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  };
 
-  const handleProductSelect = (id: string) => {
-    const prod = products.find((p) => p.id === id);
-    if (prod) {
-      setProductId(prod.id);
-      setProductName(prod.name);
-      setUnit(prod.unit);
-      setPrice(prod.currentAvgPrice);
+  const closeCamera = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraOpen(false);
+  };
+
+  const openCamera = async () => {
+    setCameraError(null);
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Live camera capture requires a supported browser over HTTPS.');
+      return;
+    }
+    try {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1600 }, height: { ideal: 1200 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+    } catch (error: any) {
+      setCameraError(error?.message || 'Camera permission was not granted.');
     }
   };
 
-  const handleMarketSelect = (id: string) => {
-    const mkt = markets.find((m) => m.id === id);
-    if (mkt) {
-      setMarketId(mkt.id);
-      setMarketName(mkt.name);
+  const captureEvidencePhoto = async () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      setCameraError('The camera is not ready yet. Try again in a moment.');
+      return;
     }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { setCameraError('Could not capture the camera frame.'); return; }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+    if (!blob) { setCameraError('Could not encode the evidence photo.'); return; }
+    const file = new File([blob], `market-evidence-${Date.now()}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+    handlePhoto(file);
+    closeCamera();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result as string);
-        addToast('Stall verification photo loaded', 'info');
-      };
-      reader.readAsDataURL(file);
-    }
+  const handlePhoto = (file?: File) => {
+    if (!file) return;
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type)) { addToast('Evidence must be JPEG, PNG, or WebP.', 'error'); return; }
+    if (file.size > 10 * 1024 * 1024) { addToast('Evidence photo must be 10 MB or smaller.', 'error'); return; }
+    if (preview) URL.revokeObjectURL(preview);
+    setPhoto(file); setPreview(URL.createObjectURL(file));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productName || !price || !marketName) {
-      addToast('Please complete all required fields', 'error');
+    if (!product || !market) { addToast('Choose a product and one of your assigned markets.', 'warning'); return; }
+    if (!numericPrice || numericPrice <= 0) { addToast('Enter a valid price.', 'warning'); return; }
+    if (!photo) { addToast('A current market photo is required as evidence.', 'warning'); return; }
+    if (!location) { addToast('Capture your device location before submitting.', 'warning'); return; }
+    const locationAgeMs = Date.now() - new Date(location.capturedAt).getTime();
+    if (!Number.isFinite(locationAgeMs) || locationAgeMs < -5 * 60_000 || locationAgeMs > 15 * 60_000) {
+      setLocation(null);
+      setLocationError('Your saved coordinates are too old. Recapture your current location before submitting.');
+      addToast('Recapture your current location before submitting.', 'warning');
       return;
     }
-
-    setIsSubmitting(true);
-    let finalPhotoUrl = photoPreview;
-
+    setSubmitting(true);
     try {
-      if (photoPreview && photoPreview.startsWith('data:')) {
-        const uploadResult = await uploadEvidencePhoto(photoPreview);
-        if (uploadResult.url) {
-          finalPhotoUrl = uploadResult.url;
-        }
-      }
-
-      submitPriceReport({
-        productId,
-        productName,
-        marketId,
-        marketName,
-        price,
-        quantity,
-        unit,
-        sellerStall,
-        photoUrl: finalPhotoUrl,
+      await submitPriceReport({
+        productId: product.id, productName: product.name, marketId: market.id, marketName: market.name,
+        price: numericPrice, unit: product.unit, sellerStall: sellerStall.trim(), evidenceFile: photo,
+        evidenceMimeType: photo.type, location,
       });
-
-      setIsSubmitting(false);
+      setPrice(''); setSellerStall(''); setPhoto(null); setLocation(null);
+      if (preview) URL.revokeObjectURL(preview); setPreview(null);
       setActiveView('agent-dashboard');
-    } catch (err: any) {
-      console.warn('Submission error:', err);
-      // Fallback submit
-      submitPriceReport({
-        productId,
-        productName,
-        marketId,
-        marketName,
-        price,
-        quantity,
-        unit,
-        sellerStall,
-        photoUrl: photoPreview,
-      });
-      setIsSubmitting(false);
-      setActiveView('agent-dashboard');
-    }
+    } catch (error: any) { addToast(error?.message || 'The observation could not be submitted.', 'error'); }
+    finally { setSubmitting(false); }
   };
 
   return (
-    <div id="submit-price-screen" className="max-w-3xl mx-auto space-y-6 pb-24">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setActiveView('agent-dashboard')}
-            className="p-2 text-[#3e4a41] dark:text-[#bdcabe] hover:bg-[#eff4ff] dark:hover:bg-[#25344a] rounded-full transition-colors cursor-pointer"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-[#121c2a] dark:text-[#f8f9ff]">
-              Submit Price Reports
-            </h1>
-            <p className="text-xs text-[#3e4a41] dark:text-[#bdcabe]">
-              Field Verification Agent • {agentProfile.name}
-            </p>
-          </div>
-        </div>
-
-        <span className="px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-xs font-bold border border-emerald-300/50">
-          ₦650 / Observation
-        </span>
+    <div className="max-w-3xl mx-auto pb-24 space-y-5">
+      <div className="flex items-start gap-3">
+        <button onClick={() => setActiveView('agent-dashboard')} className="p-2 rounded-full hover:bg-[#eff4ff] dark:hover:bg-[#25344a]"><ArrowLeft className="w-5 h-5" /></button>
+        <div><h1 className="text-2xl font-bold">Submit Market Price</h1><p className="text-xs text-[#6e7a70] dark:text-[#bdcabe] mt-1">One canonical product/pack per observation. GPS and photo evidence are required.</p></div>
       </div>
 
-      {/* Submission Mode Selector Tabs */}
-      <div className="grid grid-cols-2 p-1.5 rounded-2xl bg-[#f8f9ff] dark:bg-[#121c2a] border border-[#bdcabe]/40 dark:border-[#2d3e58]">
-        <button
-          type="button"
-          onClick={() => setSubmissionMode('single')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            submissionMode === 'single'
-              ? 'bg-white dark:bg-[#182232] text-[#008751] dark:text-[#8df8b7] shadow-xs'
-              : 'text-[#6e7a70] dark:text-[#bdcabe] hover:text-[#121c2a]'
-          }`}
-        >
-          <Store className="w-4 h-4" />
-          <span>Single Observation</span>
-        </button>
+      {(!isOnline || isLowConnectivity) && <div className="rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-4 flex gap-3 text-sm"><WifiOff className="w-5 h-5 text-amber-600 shrink-0"/><div><p className="font-bold">Offline-safe capture</p><p className="text-xs mt-1">If connectivity is unavailable, the photo and observation will be stored in IndexedDB on this device and synchronized later.</p></div></div>}
 
-        <button
-          type="button"
-          onClick={() => setSubmissionMode('bulk')}
-          className={`py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            submissionMode === 'bulk'
-              ? 'bg-white dark:bg-[#182232] text-[#008751] dark:text-[#8df8b7] shadow-xs'
-              : 'text-[#6e7a70] dark:text-[#bdcabe] hover:text-[#121c2a]'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <div className="flex items-center gap-1.5">
-            <span>Bulk Market Walk Batch</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-[#008751] text-white text-[10px] font-bold">
-              Multi-Stall
-            </span>
-          </div>
-        </button>
-      </div>
-
-      {/* Content Rendering based on active tab */}
-      {submissionMode === 'bulk' ? (
-        <BulkObservationFlow />
+      {!agentProfile.isFieldActive || assignedMarkets.length === 0 ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 dark:bg-rose-950/30 p-5"><div className="flex gap-3"><ShieldAlert className="w-5 h-5 text-rose-600"/><div><p className="font-bold">No active market assignment</p><p className="text-xs mt-1 text-[#6e7a70]">A super admin must assign this field-agent account to at least one active market before prices can be collected.</p></div></div></div>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Section 1: Product Information */}
-          <div className="bg-white dark:bg-[#182232] border border-[#bdcabe]/40 dark:border-[#2d3e58] rounded-2xl p-5 shadow-xs space-y-4">
-            <h2 className="text-sm font-bold text-[#121c2a] dark:text-[#f8f9ff] flex items-center gap-2 border-b border-[#bdcabe]/30 dark:border-[#2d3e58] pb-3">
-              <Store className="w-4 h-4 text-[#008751]" />
-              <span>Product & Location Details</span>
-            </h2>
+        <form onSubmit={handleSubmit} className="bg-white dark:bg-[#182232] border border-[#bdcabe]/40 dark:border-[#2d3e58] rounded-3xl p-5 sm:p-6 shadow-sm space-y-5">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <label className="space-y-1.5"><span className="text-xs font-bold uppercase tracking-wide text-[#6e7a70]">Product / pack</span><select value={productId} onChange={(e)=>setProductId(e.target.value)} className="w-full rounded-xl border border-[#bdcabe]/50 dark:border-[#2d3e58] bg-[#f8f9ff] dark:bg-[#121c2a] px-3 py-3 text-sm">{products.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+            <label className="space-y-1.5"><span className="text-xs font-bold uppercase tracking-wide text-[#6e7a70]">Assigned market</span><select value={marketId} onChange={(e)=>setMarketId(e.target.value)} className="w-full rounded-xl border border-[#bdcabe]/50 dark:border-[#2d3e58] bg-[#f8f9ff] dark:bg-[#121c2a] px-3 py-3 text-sm">{assignedMarkets.map((m)=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+          </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#3e4a41] dark:text-[#bdcabe] uppercase tracking-wider mb-1">
-                  Select Commodity / Product
-                </label>
-                <select
-                  value={productId}
-                  onChange={(e) => handleProductSelect(e.target.value)}
-                  className="w-full bg-[#f8f9ff] dark:bg-[#121c2a] border border-[#bdcabe]/50 dark:border-[#2d3e58] rounded-xl px-3.5 py-2.5 text-sm font-medium text-[#121c2a] dark:text-[#f8f9ff] focus:outline-none focus:ring-2 focus:ring-[#008751]"
-                >
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.unit})
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <label className="space-y-1.5"><span className="text-xs font-bold uppercase tracking-wide text-[#6e7a70]">Observed price (₦)</span><input type="number" inputMode="decimal" min="1" step="0.01" value={price} onChange={(e)=>setPrice(e.target.value)} placeholder="0" className="w-full rounded-xl border border-[#bdcabe]/50 dark:border-[#2d3e58] bg-[#f8f9ff] dark:bg-[#121c2a] px-3 py-3 text-lg font-bold" /></label>
+            <div className="space-y-1.5"><span className="text-xs font-bold uppercase tracking-wide text-[#6e7a70]">Canonical unit / pack</span><div className="w-full rounded-xl border border-[#bdcabe]/50 dark:border-[#2d3e58] bg-[#eff4ff] dark:bg-[#121c2a] px-3 py-3 text-sm font-semibold">{product?.unit || '—'} <span className="text-xs font-normal text-[#6e7a70]">(locked)</span></div></div>
+          </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#3e4a41] dark:text-[#bdcabe] uppercase tracking-wider mb-1">
-                    Market Location
-                  </label>
-                  <select
-                    value={marketId}
-                    onChange={(e) => handleMarketSelect(e.target.value)}
-                    className="w-full bg-[#f8f9ff] dark:bg-[#121c2a] border border-[#bdcabe]/50 dark:border-[#2d3e58] rounded-xl px-3.5 py-2.5 text-sm font-medium text-[#121c2a] dark:text-[#f8f9ff] focus:outline-none focus:ring-2 focus:ring-[#008751]"
-                  >
-                    {markets.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} ({m.city})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+          {deviation >= 20 && <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3 flex gap-2 text-xs"><ShieldAlert className="w-4 h-4 text-amber-600 shrink-0"/><span>This price differs by about {deviation.toFixed(0)}% from the latest published {selectedCityLabel(product)} benchmark. You can still submit it; the server will independently score it as a possible anomaly.</span></div>}
 
-                <div>
-                  <label className="block text-xs font-bold text-[#3e4a41] dark:text-[#bdcabe] uppercase tracking-wider mb-1">
-                    Seller / Stall Identifier
-                  </label>
-                  <input
-                    type="text"
-                    value={sellerStall}
-                    onChange={(e) => setSellerStall(e.target.value)}
-                    placeholder="e.g. Mama Joy / Stall 42"
-                    className="w-full bg-[#f8f9ff] dark:bg-[#121c2a] border border-[#bdcabe]/50 dark:border-[#2d3e58] rounded-xl px-3.5 py-2.5 text-sm text-[#121c2a] dark:text-[#f8f9ff] focus:outline-none focus:ring-2 focus:ring-[#008751]"
-                  />
-                </div>
-              </div>
+          <label className="space-y-1.5 block"><span className="text-xs font-bold uppercase tracking-wide text-[#6e7a70]">Seller / stall reference <span className="font-normal">(optional)</span></span><input value={sellerStall} onChange={(e)=>setSellerStall(e.target.value)} placeholder="e.g. Grain line, Stall 14" className="w-full rounded-xl border border-[#bdcabe]/50 dark:border-[#2d3e58] bg-[#f8f9ff] dark:bg-[#121c2a] px-3 py-3 text-sm" /></label>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-[#bdcabe]/40 dark:border-[#2d3e58] p-4 space-y-3">
+              <div className="flex items-center gap-2"><MapPin className="w-4 h-4 text-[#008751]"/><p className="text-sm font-bold">Device location</p></div>
+              {location ? <div className="text-xs space-y-1 text-[#526057] dark:text-[#bdcabe]"><p>{location.lat.toFixed(6)}, {location.lng.toFixed(6)}</p><p>Accuracy: {location.accuracyMeters ? `±${Math.round(location.accuracyMeters)} m` : 'not reported'}</p><p>Captured: {new Date(location.capturedAt).toLocaleTimeString()}</p></div> : <p className="text-xs text-[#6e7a70]">No coordinates captured yet.</p>}
+              {locationError && <p className="text-xs text-rose-600">{locationError}</p>}
+              <button type="button" onClick={captureLocation} disabled={locating} className="w-full py-2.5 rounded-xl border border-[#008751] text-[#006b3f] dark:text-[#8df8b7] text-xs font-bold flex items-center justify-center gap-2 disabled:opacity-50"><LocateFixed className="w-4 h-4"/>{locating ? 'Capturing…' : location ? 'Recapture location' : 'Capture current location'}</button>
+            </div>
+
+            <div className="rounded-2xl border border-[#bdcabe]/40 dark:border-[#2d3e58] p-4 space-y-3">
+              <div className="flex items-center gap-2"><Camera className="w-4 h-4 text-[#008751]"/><p className="text-sm font-bold">Photo evidence</p></div>
+              {preview ? <div className="relative"><img src={preview} alt="Observation evidence preview" className="w-full h-36 object-cover rounded-xl"/><button type="button" onClick={()=>{ if(preview) URL.revokeObjectURL(preview); setPreview(null); setPhoto(null); }} className="absolute top-2 right-2 p-1.5 rounded-full bg-black/70 text-white"><X className="w-4 h-4"/></button></div> : <button type="button" onClick={()=>void openCamera()} className="w-full h-36 rounded-xl border-2 border-dashed border-[#bdcabe] flex flex-col items-center justify-center gap-2 text-xs text-[#6e7a70]"><Camera className="w-6 h-6"/><span>Take live evidence photo</span><span className="text-[10px]">Gallery uploads are not used for field evidence.</span></button>}
+              {cameraError && <p className="text-[11px] text-rose-600">{cameraError}</p>}
+              {photo && <p className="text-[11px] text-[#6e7a70]">Live camera capture · {(photo.size/1024/1024).toFixed(1)} MB. Photo presence is verified on the server; EXIF is not claimed unless separately evaluated.</p>}
             </div>
           </div>
 
-          {/* Section 2: Pricing Details */}
-          <div className="bg-white dark:bg-[#182232] border border-[#bdcabe]/40 dark:border-[#2d3e58] rounded-2xl p-5 shadow-xs space-y-4">
-            <h2 className="text-sm font-bold text-[#121c2a] dark:text-[#f8f9ff] flex items-center gap-2 border-b border-[#bdcabe]/30 dark:border-[#2d3e58] pb-3">
-              <DollarSign className="w-4 h-4 text-[#008751]" />
-              <span>Pricing & Quantity</span>
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#3e4a41] dark:text-[#bdcabe] uppercase tracking-wider mb-1">
-                  Observed Selling Price (₦ NGN)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-base font-bold text-[#008751]">
-                    ₦
-                  </span>
-                  <input
-                    type="number"
-                    value={price}
-                    onChange={(e) => setPrice(Number(e.target.value))}
-                    placeholder="78200"
-                    className="w-full bg-[#f8f9ff] dark:bg-[#121c2a] border border-[#bdcabe]/50 dark:border-[#2d3e58] rounded-xl pl-8 pr-4 py-2.5 text-lg font-bold text-[#121c2a] dark:text-[#f8f9ff] focus:outline-none focus:ring-2 focus:ring-[#008751]"
-                  />
-                </div>
-
-                {/* Anomaly Notice Warning */}
-                {isAnomaly && (
-                  <div className="mt-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold">Price Anomaly Warning:</span> This price differs by{' '}
-                      {Math.round((Math.abs(price - baseline) / baseline) * 100)}% from current market
-                      baseline (₦{baseline.toLocaleString()}). Ensure evidence photo clearly shows stall
-                      or receipt.
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#3e4a41] dark:text-[#bdcabe] uppercase tracking-wider mb-1">
-                    Quantity Observed
-                  </label>
-                  <input
-                    type="number"
-                    value={quantity}
-                    onChange={(e) => setQuantity(Number(e.target.value))}
-                    min={1}
-                    className="w-full bg-[#f8f9ff] dark:bg-[#121c2a] border border-[#bdcabe]/50 dark:border-[#2d3e58] rounded-xl px-3.5 py-2.5 text-sm text-[#121c2a] dark:text-[#f8f9ff] focus:outline-none focus:ring-2 focus:ring-[#008751]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#3e4a41] dark:text-[#bdcabe] uppercase tracking-wider mb-1">
-                    Unit of Measurement
-                  </label>
-                  <select
-                    value={unit}
-                    onChange={(e) => setUnit(e.target.value)}
-                    className="w-full bg-[#f8f9ff] dark:bg-[#121c2a] border border-[#bdcabe]/50 dark:border-[#2d3e58] rounded-xl px-3.5 py-2.5 text-sm font-medium text-[#121c2a] dark:text-[#f8f9ff] focus:outline-none focus:ring-2 focus:ring-[#008751]"
-                  >
-                    <option value="50kg Bag">50kg Bag</option>
-                    <option value="25kg Bag">25kg Bag</option>
-                    <option value="10kg Bag">10kg Bag</option>
-                    <option value="Basket">Basket</option>
-                    <option value="1kg">1kg</option>
-                    <option value="Tuber">Tuber</option>
-                    <option value="5 Litres">5 Litres</option>
-                    <option value="Pack">Pack</option>
-                  </select>
-                </div>
+          {cameraOpen && (
+            <div className="fixed inset-0 z-[70] bg-black/90 flex items-center justify-center p-3">
+              <div className="w-full max-w-lg bg-[#121c2a] text-white rounded-3xl overflow-hidden shadow-2xl">
+                <div className="p-4 flex items-center justify-between"><div><p className="font-bold">Live evidence camera</p><p className="text-[11px] text-white/65">Frame the product, shelf/stall or visible price evidence.</p></div><button type="button" onClick={closeCamera} className="p-2 rounded-full bg-white/10"><X className="w-5 h-5"/></button></div>
+                <div className="bg-black aspect-[4/3] flex items-center justify-center"><video ref={videoRef} playsInline muted className="w-full h-full object-cover" /></div>
+                <div className="p-4"><button type="button" onClick={()=>void captureEvidencePhoto()} className="w-full py-3.5 rounded-xl bg-[#008751] text-white font-bold flex items-center justify-center gap-2"><Camera className="w-5 h-5"/>Capture evidence</button></div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Section 3: Verification Evidence */}
-          <div className="bg-white dark:bg-[#182232] border border-[#bdcabe]/40 dark:border-[#2d3e58] rounded-2xl p-5 shadow-xs space-y-4">
-            <h2 className="text-sm font-bold text-[#121c2a] dark:text-[#f8f9ff] flex items-center gap-2 border-b border-[#bdcabe]/30 dark:border-[#2d3e58] pb-3">
-              <Camera className="w-4 h-4 text-[#008751]" />
-              <span>Verification Evidence</span>
-            </h2>
-
-            <div className="space-y-4">
-              {/* Photo Capture & Upload Box */}
-              <div>
-                <label className="block text-xs font-bold text-[#3e4a41] dark:text-[#bdcabe] uppercase tracking-wider mb-2">
-                  Stall / Price Tag / Product Photo
-                </label>
-
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept="image/*"
-                  className="hidden"
-                />
-
-                {photoPreview ? (
-                  <div className="relative rounded-xl overflow-hidden border border-[#bdcabe]/50 dark:border-[#2d3e58] h-48 bg-black/5">
-                    <img
-                      src={photoPreview}
-                      alt="Submission Preview"
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end justify-between p-3">
-                      <span className="text-xs font-bold text-white flex items-center gap-1">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        EXIF & Geotag Attached
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-3 py-1.5 rounded-lg bg-white/90 dark:bg-[#182232]/90 text-xs font-semibold text-[#121c2a] dark:text-[#f8f9ff] hover:bg-white transition-colors"
-                      >
-                        Retake / Replace
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-[#bdcabe] dark:border-[#2d3e58] hover:border-[#008751] rounded-2xl p-6 text-center cursor-pointer transition-colors bg-[#f8f9ff] dark:bg-[#121c2a] flex flex-col items-center justify-center gap-2"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-[#008751]/10 flex items-center justify-center text-[#008751]">
-                      <Camera className="w-6 h-6" />
-                    </div>
-                    <div className="text-xs font-bold text-[#121c2a] dark:text-[#f8f9ff]">
-                      Tap to Capture or Upload Evidence Photo
-                    </div>
-                    <p className="text-[11px] text-[#6e7a70] dark:text-[#bdcabe]">
-                      Supports direct camera snapshot or gallery file
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* GPS & Timestamp Automatic Metadata */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div className="bg-[#f8f9ff] dark:bg-[#121c2a] p-3 rounded-xl border border-[#bdcabe]/30 dark:border-[#2d3e58] flex items-start gap-2.5">
-                  <MapPin className="w-4 h-4 text-[#008751] shrink-0 mt-0.5" />
-                  <div className="text-xs">
-                    <div className="font-bold text-[#121c2a] dark:text-[#f8f9ff]">
-                      GPS Geotag Verified
-                    </div>
-                    <div className="text-[11px] text-[#6e7a70] dark:text-[#bdcabe] mt-0.5">
-                      Lat: 4.8156° N, Lng: 7.0094° E (Accuracy ±5m)
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-[#f8f9ff] dark:bg-[#121c2a] p-3 rounded-xl border border-[#bdcabe]/30 dark:border-[#2d3e58] flex items-start gap-2.5">
-                  <Clock className="w-4 h-4 text-[#008751] shrink-0 mt-0.5" />
-                  <div className="text-xs">
-                    <div className="font-bold text-[#121c2a] dark:text-[#f8f9ff]">
-                      Timestamp Certified
-                    </div>
-                    <div className="text-[11px] text-[#6e7a70] dark:text-[#bdcabe] mt-0.5">
-                      Auto-recorded: {new Date().toLocaleTimeString()}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Offline Resilience Notice */}
-              {!isOnline && (
-                <div className="bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/30 rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Offline Resilience Active:</span> Your price observation and EXIF data will be safely stored in the market cache and automatically sent to the verifier pool when network is restored.
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Button */}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className={`w-full py-3.5 px-6 rounded-2xl text-white font-bold text-sm sm:text-base shadow-lg transition-transform active:scale-98 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
-              !isOnline ? 'bg-amber-600 hover:bg-amber-700' : 'bg-[#008751] hover:bg-[#006b3f]'
-            }`}
-          >
-            <Check className="w-5 h-5" />
-            <span>
-              {isSubmitting
-                ? 'Storing Observation...'
-                : !isOnline
-                ? 'Save to Offline Queue (₦650)'
-                : 'Submit for Verification (₦650)'}
-            </span>
-          </button>
+          <button type="submit" disabled={submitting || !photo || !location || !numericPrice} className="w-full py-3.5 rounded-xl bg-[#008751] hover:bg-[#006b3f] text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50"><Send className="w-4 h-4"/>{submitting ? 'Submitting securely…' : isOnline ? 'Submit for verification' : 'Save to offline outbox'}</button>
+          <div className="flex gap-2 text-[11px] text-[#6e7a70]"><CheckCircle2 className="w-4 h-4 text-[#008751] shrink-0"/><span>The browser does not decide whether a price is “verified.” Submission evidence, market assignment, GPS, anomaly score and final approval are evaluated by the Supabase trust workflow.</span></div>
         </form>
       )}
     </div>
   );
 };
+
+function selectedCityLabel(product?: { hasVerifiedPrice: boolean }) { return product?.hasVerifiedPrice ? 'city' : 'recent'; }

@@ -1,0 +1,59 @@
+    } finally { setAuthLoading(false); }
+  }, [refreshWorkspaces]);
+
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase) { setAuthLoading(false); return; }
+    void refreshAuthProfile();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') { setIsPasswordRecovery(true); setIsAuthModalOpen(true); }
+      if (!session) {
+        setCurrentProfile(null); setCurrentRole('consumer'); setActiveViewState('home'); setSavedProductIds(getLocalData('anonymous_saved_products', [])); void refreshWorkspaces(null); return;
+      }
+      window.setTimeout(() => { void (async () => { const profile = await refreshAuthProfile(); if (event === 'SIGNED_IN' && profile) { setIsAuthModalOpen(false); await supabase.rpc('touch_my_profile'); } })(); }, 0);
+    });
+    return () => subscription.unsubscribe();
+  }, [refreshAuthProfile, refreshWorkspaces]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const hashParams = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : url.hash);
+    const message = url.searchParams.get('error_description') || hashParams.get('error_description');
+    if (!message) return;
+    setIsAuthModalOpen(true); addToast(`Sign-in could not be completed: ${message}`, 'error');
+    url.searchParams.delete('error'); url.searchParams.delete('error_code'); url.searchParams.delete('error_description');
+    if (hashParams.has('error_description')) { hashParams.delete('error'); hashParams.delete('error_code'); hashParams.delete('error_description'); url.hash = hashParams.toString() ? `#${hashParams.toString()}` : ''; }
+    window.history.replaceState({}, document.title, url.toString());
+  }, [addToast]);
+
+  useEffect(() => { void loadPublic(); }, [loadPublic]);
+  const refreshData = useCallback(async () => { await loadPublic(); if (currentProfile) await refreshWorkspaces(currentProfile); await refreshQueue(); }, [currentProfile, loadPublic, refreshQueue, refreshWorkspaces]);
+  const logout = async () => { await signOutSupabase(); setCurrentProfile(null); setCurrentRole('consumer'); setActiveViewState('home'); };
+  const setSelectedCity = (city: string) => { setSelectedCityState(city); setLocalData('selected_city', city); };
+  const setActiveView = (view: AppView) => {
+    if (['agent-dashboard','submit-price'].includes(view) && currentRole !== 'agent') { addToast('Field-agent access is required.', 'warning'); setActiveViewState(routeForRole(currentRole)); return; }
+    if (['admin-overview','admin-verification'].includes(view) && !['admin','super_admin'].includes(currentRole)) { addToast('Verifier/admin access is required.', 'warning'); setActiveViewState(routeForRole(currentRole)); return; }
+    if (['admin-users','admin-catalog'].includes(view) && currentRole !== 'super_admin') { addToast('Only the super admin can manage this area.', 'warning'); setActiveViewState(routeForRole(currentRole)); return; }
+    setActiveViewState(view);
+  };
+
+  const syncOfflineQueue = useCallback(async () => {
+    if (!navigator.onLine) { addToast('You are offline. Queued observations remain safely stored on this device.', 'warning'); return; }
+    if (!currentProfile || currentRole !== 'agent') return;
+    const queue = await getOfflineSubmissionsQueue(currentProfile.id); if (!queue.length) return; let success = 0;
+    for (const item of queue) {
+      try {
+        await updateOfflineSubmission({ ...item, status: 'syncing' });
+        await submitPriceObservation({ productId:item.data.productId, marketId:item.data.marketId, price:item.data.price, unit:item.data.unit, sellerStall:item.data.sellerStall, location:item.data.location, evidenceFile:item.data.evidenceBlob, evidenceMimeType:item.data.evidenceMimeType });
+        await removeOfflineSubmission(item.id); success += 1;
+      } catch (error: any) { await updateOfflineSubmission({ ...item, status:'failed', retryCount:item.retryCount+1, lastError:error?.message||'Sync failed' }); }
+    }
+    await refreshQueue(); if (currentProfile) await refreshWorkspaces(currentProfile); await loadPublic();
+    addToast(success ? `${success} queued observation${success === 1 ? '' : 's'} synchronized.` : 'Queued observations could not be synchronized yet.', success ? 'success' : 'warning');
+  }, [addToast, currentProfile, loadPublic, refreshQueue, refreshWorkspaces]);
+
+  useEffect(() => { if (isOnline && pendingOfflineQueue.length) void syncOfflineQueue(); }, [isOnline, pendingOfflineQueue.length, syncOfflineQueue]);
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onMessage = (event: MessageEvent) => {

@@ -1,0 +1,25 @@
+name: Recovery Drill Reminder
+
+on:
+  schedule:
+    - cron: '0 09 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  open-drill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create monthly recovery-drill issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          month="$(date -u +'%Y-%m')"
+          title="[Recovery Drill] $month MarketPulse restore test"
+          existing="$(gh issue list --state all --search '"'"'$title'"'"' in:title' --json number --jq 'length')"
+          if [ "$existing" = "0" ]; then
+            gh issue create --title "$title" --body "Run the monthly recovery drill described in docs/BACKUP_RECOVERY.md. Record backup timestamp, restore target, RPO, RTO, integrity checks, Storage evidence validation, and any corrective actions. Record the completed drill in public.recovery_drills."
+          fi

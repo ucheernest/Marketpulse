@@ -1,0 +1,93 @@
+  marketId: string;
+  price: number;
+  unit: string;
+  sellerStall: string;
+  location: {
+    lat: number;
+    lng: number;
+    accuracyMeters: number | null;
+    capturedAt: string;
+  };
+  evidenceFile: File | Blob;
+  evidenceMimeType?: string;
+}
+
+const CATEGORY_FALLBACK: ProductCategory = 'Food Staples';
+const KNOWN_CATEGORIES = new Set<ProductCategory>([
+  'Food Staples',
+  'Fresh Food',
+  'Meat & Seafood',
+  'Household',
+  'Personal Care',
+  'Beverages',
+]);
+
+function asNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function relativeTime(value: string | null | undefined): string {
+  if (!value) return 'Not yet verified';
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 'Unknown';
+  const diffMinutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const hours = Math.round(diffMinutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function isSameUtcDay(value: string | null | undefined, now = new Date()): boolean {
+  if (!value) return false;
+  const d = new Date(value);
+  return d.getUTCFullYear() === now.getUTCFullYear() && d.getUTCMonth() === now.getUTCMonth() && d.getUTCDate() === now.getUTCDate();
+}
+
+function confidenceLabel(score: number, verifiedAt: string | null): Product['confidence'] {
+  if (!verifiedAt) return 'Limited Data';
+  const ageHours = Math.max(0, (Date.now() - new Date(verifiedAt).getTime()) / 3_600_000);
+  if (ageHours > 72) return 'Stale';
+  if (score >= 80) return 'High Confidence';
+  if (score >= 55) return 'Moderate Confidence';
+  return 'Limited Data';
+}
+
+function placeholderSvg(title: string, subtitle: string, kind: 'product' | 'market'): string {
+  const safeTitle = title.replace(/[<>&'\"]/g, '').slice(0, 32);
+  const safeSubtitle = subtitle.replace(/[<>&'\"]/g, '').slice(0, 32);
+  const icon = kind === 'market' ? 'MARKET' : 'PRICE';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><rect width="800" height="500" fill="#eef6f1"/><circle cx="400" cy="185" r="78" fill="#008751" opacity=".12"/><text x="400" y="197" text-anchor="middle" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#006b3f">${icon}</text><text x="400" y="310" text-anchor="middle" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="#121c2a">${safeTitle}</text><text x="400" y="350" text-anchor="middle" font-family="Arial,sans-serif" font-size="20" fill="#526057">${safeSubtitle}</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function initials(name: string): string {
+  const value = name.trim();
+  if (!value) return 'FA';
+  return value.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+}
+
+function tierForReputation(reputation: number): AgentProfile['tier'] {
+  if (reputation >= 95) return 'Senior Agent';
+  if (reputation >= 85) return 'Trusted Agent';
+  return 'Field Agent';
+}
+
+function systemAlertTimestamp(): string { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+
+export async function loadPublicData(city = 'Port Harcourt'): Promise<PublicDataBundle> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase is not configured.');
+
+  const [categoriesRes, brandsRes, packSizesRes, productsRes, aliasesRes, marketsRes, cityPricesRes, marketPricesRes, historyRes] = await Promise.all([
+    supabase.from('categories').select('id,name,slug').eq('is_active', true).order('sort_order'),
+    supabase.from('brands').select('id,name'),
+    supabase.from('pack_sizes').select('id,size_label,standard_unit'),
+    supabase.from('products').select('id,name,slug,category_id,brand_id,pack_size_id,unit,is_local_or_imported,image_url,market_insight,is_active').eq('is_active', true).order('name'),
+    supabase.from('product_aliases').select('product_id,alias'),
+    supabase.from('markets').select('id,name,city,state,address,latitude,longitude,geofence_radius_meters,operating_hours,health_score,image_url,is_active').eq('is_active', true).eq('city', city).order('name'),
+    supabase.from('published_city_prices').select('product_id,city,average_price,low_price,high_price,observation_count,market_count,last_verified_at,confidence_score,price_change_percent,price_change_direction').eq('city', city),
+    supabase.from('published_market_prices').select('product_id,market_id,market_name,city,average_price,low_price,high_price,observation_count,confidence_score,last_verified_at').eq('city', city),
+    supabase.from('published_price_history_daily')

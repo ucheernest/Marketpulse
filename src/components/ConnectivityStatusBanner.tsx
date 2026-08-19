@@ -19,6 +19,7 @@ export const ConnectivityStatusBanner: React.FC = () => {
     pendingOfflineQueue,
     syncOfflineQueue,
     lastCacheSync,
+    refreshData,
   } = useApp();
 
   const [isSyncing, setIsSyncing] = useState(false);
@@ -27,6 +28,7 @@ export const ConnectivityStatusBanner: React.FC = () => {
   const handleManualSync = async () => {
     setIsSyncing(true);
     await syncOfflineQueue();
+    if (isOnline) await refreshData();
     setTimeout(() => {
       setIsSyncing(false);
     }, 600);
@@ -74,10 +76,10 @@ export const ConnectivityStatusBanner: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
             <span className="font-bold tracking-tight">
               {!isOnline
-                ? 'Offline Market Mode (Service Worker Active)'
+                ? 'Offline mode — using last verified cache'
                 : isLowConnectivity
-                ? 'Low Connectivity Detected (Optimized Cache Mode)'
-                : 'Local Cache Synchronized'}
+                ? 'Low connectivity — verified cache available'
+                : 'Verified cache synchronized'}
             </span>
             <span className="opacity-80 text-[11px] hidden sm:inline">•</span>
             <span className="opacity-80 text-[11px]">
@@ -85,7 +87,7 @@ export const ConnectivityStatusBanner: React.FC = () => {
                 ? 'Reading from local catalog cache. Submissions are queued in storage.'
                 : hasQueuedItems
                 ? `${pendingOfflineQueue.length} pending report(s) ready to synchronize.`
-                : 'Full market catalog available offline.'}
+                : 'Last successfully loaded verified catalog remains available offline.'}
             </span>
           </div>
         </div>
@@ -115,7 +117,7 @@ export const ConnectivityStatusBanner: React.FC = () => {
             } disabled:opacity-50`}
           >
             <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Syncing...' : 'Sync Cache'}</span>
+            <span>{isSyncing ? 'Syncing...' : hasQueuedItems ? 'Sync outbox' : 'Refresh verified data'}</span>
           </button>
         </div>
       </div>

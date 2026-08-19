@@ -1,4 +1,4 @@
-name: Prepare canonical MarketPulse build
+name: Prepare MarketPulse production build
 
 on:
   pull_request:
@@ -12,32 +12,44 @@ permissions:
 
 jobs:
   prepare:
-    if: github.head_ref == 'chatgpt-canonical-sync-working'
+    if: github.head_ref == 'production-readiness-20260819'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout source branch
+      - name: Checkout production-readiness branch
         uses: actions/checkout@v4
         with:
-          ref: chatgpt-canonical-sync-working
+          ref: production-readiness-20260819
           fetch-depth: 0
 
-      - name: Replace prototype with canonical source
+      - name: Reconstruct and verify production source
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/marketpulse-canonical
-          mkdir -p /tmp/marketpulse-canonical
-          unzip -q marketpulse_usable_auth_ready.zip -d /tmp/marketpulse-canonical
+          if [ ! -d .marketpulse-sync ]; then
+            echo "Production source already prepared; nothing to reconstruct."
+            exit 0
+          fi
+          cat .marketpulse-sync/chunk-*.txt | base64 --decode > /tmp/marketpulse-production.zip
+          echo "4a3f40bcc7c80e28b67c78bf21e243a8f642c220eaeef42855120b1b662f9468  /tmp/marketpulse-production.zip" | sha256sum -c -
+          unzip -tq /tmp/marketpulse-production.zip
+          rm -rf /tmp/marketpulse-production
+          mkdir -p /tmp/marketpulse-production
+          unzip -q /tmp/marketpulse-production.zip -d /tmp/marketpulse-production
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-          cp -a /tmp/marketpulse-canonical/. .
+          cp -a /tmp/marketpulse-production/. .
           rm -f .env
 
-      - name: Commit canonical source to PR branch
+      - name: Commit prepared source to PR branch
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "MarketPulse Sync"
+          git config user.name "MarketPulse Production Sync"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          git commit -m "feat: sync canonical MarketPulse auth profile build"
-          git push origin HEAD:chatgpt-canonical-sync-working
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "feat: production-ready MarketPulse release"
+          git push origin HEAD:production-readiness-20260819

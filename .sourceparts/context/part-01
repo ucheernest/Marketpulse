@@ -7,6 +7,7 @@
   adminKPIs: AdminKPIs;
   systemAlerts: SystemAlert[];
   auditLogs: AuditLogEntry[];
+  addAuditLog: (log: Omit<AuditLogEntry, 'id' | 'timestamp' | 'actorId' | 'actorName'> & { actorId?: string; actorName?: string }) => void;
   savedProductIds: string[];
   dataLoading: boolean;
   dataError: string | null;

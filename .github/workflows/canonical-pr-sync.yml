@@ -1,9 +1,8 @@
-name: Prepare MarketPulse production build
+name: Prepare canonical MarketPulse release
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -12,44 +11,47 @@ permissions:
 
 jobs:
   prepare:
-    if: github.head_ref == 'production-readiness-20260819'
+    if: github.head_ref == 'canonical-production-20260819'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Checkout production-readiness branch
+      - name: Checkout canonical release branch
         uses: actions/checkout@v4
         with:
-          ref: production-readiness-20260819
+          ref: canonical-production-20260819
           fetch-depth: 0
 
-      - name: Reconstruct and verify production source
+      - name: Reconstruct verified canonical source
+        if: hashFiles('.marketpulse-release/chunk-*.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -d .marketpulse-sync ]; then
-            echo "Production source already prepared; nothing to reconstruct."
-            exit 0
-          fi
-          cat .marketpulse-sync/chunk-*.txt | base64 --decode > /tmp/marketpulse-production.zip
-          echo "4a3f40bcc7c80e28b67c78bf21e243a8f642c220eaeef42855120b1b662f9468  /tmp/marketpulse-production.zip" | sha256sum -c -
+          cat .marketpulse-release/chunk-*.txt | base64 --decode > /tmp/marketpulse-production.zip
+          echo "d25dfc83d7dc5c5f861e135da03c3c802f524c572ef1fd3c7f6500f5f9a9a6e3  /tmp/marketpulse-production.zip" | sha256sum -c -
           unzip -tq /tmp/marketpulse-production.zip
           rm -rf /tmp/marketpulse-production
           mkdir -p /tmp/marketpulse-production
           unzip -q /tmp/marketpulse-production.zip -d /tmp/marketpulse-production
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a /tmp/marketpulse-production/. .
-          rm -f .env
+          rm -f .env .env.*
 
-      - name: Commit prepared source to PR branch
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: TypeScript check
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Commit verified canonical source
+        if: hashFiles('.marketpulse-release/chunk-*.txt') != ''
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "MarketPulse Production Sync"
           git config user.email "actions@users.noreply.github.com"
           git add -A
-          if git diff --cached --quiet; then
-            echo "No source changes to commit."
-            exit 0
-          fi
-          git commit -m "feat: production-ready MarketPulse release"
-          git push origin HEAD:production-readiness-20260819
+          git commit -m "feat: deploy canonical production MarketPulse" || exit 0
+          git push origin HEAD:canonical-production-20260819

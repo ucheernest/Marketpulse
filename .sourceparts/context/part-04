@@ -36,7 +36,7 @@
     themeMode,setThemeMode,isDark,isOnline,isLowConnectivity,pendingOfflineQueue,syncOfflineQueue,lastCacheSync,
     currentRole,currentProfile,isAuthenticated:Boolean(currentProfile),authLoading,refreshAuthProfile,logout,
     activeView,setActiveView,selectedCity,setSelectedCity,products,markets,submissions,agentProfile,adminKPIs,
-    systemAlerts,auditLogs,savedProductIds,dataLoading,dataError,refreshData,
+    systemAlerts,auditLogs,addAuditLog,savedProductIds,dataLoading,dataError,refreshData,
     searchQuery,setSearchQuery,selectedCategory,setSelectedCategory,selectedOriginFilter,setSelectedOriginFilter,
     selectedSizeFilter,setSelectedSizeFilter,selectedSort,setSelectedSort,
     selectedProduct,openProductDetail:setSelectedProduct,closeProductDetail:()=>setSelectedProduct(null),

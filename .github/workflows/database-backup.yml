@@ -2,7 +2,7 @@ name: Database Logical Backup
 
 on:
   schedule:
-    - cron: '30 02 * * 0'
+    - cron: '30 02 * * *'
   workflow_dispatch:
 
 permissions:

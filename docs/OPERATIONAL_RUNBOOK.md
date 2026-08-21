@@ -8,6 +8,9 @@ This runbook covers the Port Harcourt pilot and the production path from field c
 - **SEV-2:** verification queue blocked, agent submissions failing, stale prices across multiple markets, recurring frontend errors, or one market producing systematically bad data.
 - **SEV-3:** individual inaccurate-price reports, a single agent recheck, isolated UI defect, or non-critical data-quality issue.
 
+## Incident record
+Admin → Launch operations is the canonical operational incident tracker. Open an `operational_incidents` record for SEV-1/2 events and any recurring SEV-3 issue that requires coordinated work. Record severity, concise title, optional market/observation linkage, status (`open`, `monitoring`, `resolved`) and resolution summary. Do not mark an incident resolved until the underlying service/data condition has been verified.
+
 ## Agent submits suspicious or bad data
 1. Do not publish the observation.
 2. In Admin → Verification, inspect evidence, GPS distance/accuracy, captured timestamp, confidence components, agent reputation and recent observations for the same product.
@@ -21,6 +24,7 @@ This runbook covers the Port Harcourt pilot and the production path from field c
 - Agent should keep the capture in the owner-scoped offline queue and retry when connectivity returns.
 - Confirm `price-evidence` Storage is healthy and that the agent's authenticated session is valid.
 - Never switch to gallery-only or evidence-optional submission as a workaround.
+- If Storage/evidence failure affects multiple agents, open a SEV-1/SEV-2 incident depending on whether verification is blocked globally or partially.
 
 ## GPS failure
 - Require a fresh device location. Client rejects stale location and poor accuracy before submission.
@@ -30,10 +34,11 @@ This runbook covers the Port Harcourt pilot and the production path from field c
 ## Stale public prices
 - Public price freshness is based on approved observation capture time.
 - Prices older than 72 hours must be treated as stale/limited data.
+- Admin → Launch operations ranks product coverage gaps; recheck the highest-priority stale products first.
 - If a high-volume product becomes stale, create recheck assignments in at least two independent markets before presenting a renewed high-confidence value.
 
 ## Market disablement
-Use Admin → Catalog/Markets. Deactivate a market when it is closed, inaccessible, relocated, compromised, or its geofence is materially wrong. Existing audit/observation history remains. New agent assignments and new captures must use an active market.
+Use Admin → Catalog/Markets. Deactivate a market when it is closed, inaccessible, relocated, compromised, or its geofence is materially wrong. Existing audit/observation history remains. New agent assignments and new captures must use an active market. Open an incident when disablement is caused by suspected data compromise or materially affects pilot coverage.
 
 ## Inaccurate-price reports
 1. Review the report against the currently published product/market snapshot.
@@ -42,12 +47,13 @@ Use Admin → Catalog/Markets. Deactivate a market when it is closed, inaccessib
 4. Resolve only after the price is confirmed/corrected; dismiss with notes when evidence does not support the report.
 
 ## Client/runtime errors
-Authenticated frontend errors are stored in `client_error_events` and appear in Admin → Production readiness. Resolve only after reproducing or confirming the relevant deployment/configuration fix.
+Authenticated frontend errors are stored in `client_error_events` and appear in Admin → Production readiness. Resolve only after reproducing or confirming the relevant deployment/configuration fix. Escalate recurring failures to an operational incident.
 
 ## Incident response
-1. Record incident start time and affected surface.
+1. Record incident start time and affected surface in Admin → Launch operations.
 2. Freeze risky admin changes if data integrity is uncertain.
 3. Check GitHub/Vercel deployment status, Supabase Auth/API/Storage logs and the `marketpulse-health` function.
 4. If a release caused the issue, roll back to the last successful Vercel deployment/Git commit.
 5. If data was changed incorrectly, stop publication, identify affected rows from audit logs, restore/correct from a verified backup where appropriate, then refresh public snapshots.
-6. Record remediation and post-incident actions.
+6. Move the incident to `monitoring` after remediation while validation is underway.
+7. Record the resolution summary and close only after service/data integrity is verified.

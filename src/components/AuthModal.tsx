@@ -69,17 +69,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
       setErrorMsg('Truprice.ng authentication is temporarily unavailable.');
       return;
     }
-    if (googleAvailable !== true) {
-      setErrorMsg('Google sign-in has not been enabled on the Truprice.ng authentication project yet. You can use email and password now.');
-      return;
-    }
+
     setGoogleLoading(true);
     try {
+      const providers = await getAuthProviderAvailability();
+      setGoogleAvailable(providers.google);
+      if (!providers.google) {
+        setErrorMsg('Google sign-in is still disabled in Supabase. Confirm that the Google provider is enabled and saved after adding the Client ID and Client Secret, then try again.');
+        return;
+      }
       await signInWithGoogleOAuth();
       // A successful call redirects the browser to Google. The Supabase auth listener
       // restores the profile and routes the user when Google redirects back.
     } catch (err: any) {
       setErrorMsg(err?.message || 'Could not start Google sign-in.');
+    } finally {
       setGoogleLoading(false);
     }
   };
@@ -203,15 +207,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 <button
                   type="button"
                   onClick={() => void handleGoogle()}
-                  disabled={googleLoading || googleAvailable !== true}
+                  disabled={googleLoading}
                   className="w-full py-3 px-4 rounded-xl bg-white dark:bg-[#121c2a] border border-[#bdcabe]/60 dark:border-[#2d3e58] hover:border-[#6e7a70] text-[#121c2a] dark:text-[#f8f9ff] text-sm font-bold flex items-center justify-center gap-3 disabled:opacity-55 disabled:cursor-not-allowed"
                 >
                   {googleLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <GoogleMark />}
-                  <span>{googleLoading ? 'Opening Google…' : googleAvailable === null ? 'Checking Google sign-in…' : 'Continue with Google'}</span>
+                  <span>{googleLoading ? 'Checking Google sign-in…' : 'Continue with Google'}</span>
                 </button>
                 {googleAvailable === false && (
                   <p className="text-[10px] leading-4 text-[#835200] dark:text-[#ffdea6] text-center">
-                    Google sign-in is not enabled yet. Existing email accounts can still log in; new email sign-ups require working confirmation-email delivery.
+                    Google sign-in is not active yet. The button will re-check Supabase when clicked, so you can retry immediately after enabling and saving the provider.
                   </p>
                 )}
                 <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider font-bold text-[#6e7a70]">

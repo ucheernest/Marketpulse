@@ -51,7 +51,7 @@ export const Navbar: React.FC = () => {
 
   const initials = useMemo(() => {
     const name = currentProfile?.full_name?.trim();
-    if (!name) return 'MP';
+    if (!name) return 'TP';
     return name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
   }, [currentProfile?.full_name]);
 
@@ -95,7 +95,7 @@ export const Navbar: React.FC = () => {
               <MapPin className="w-5 h-5" />
             </div>
             <div className="hidden sm:block">
-              <span className="text-xl font-bold text-[#006b3f] dark:text-[#8df8b7] tracking-tight">MarketPulse</span>
+              <span className="text-xl font-bold text-[#006b3f] dark:text-[#8df8b7] tracking-tight">Truprice.ng</span>
               {currentRole !== 'consumer' && (
                 <span className="ml-2 text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-[#2170e4]/10 text-[#0058be] dark:text-[#adc6ff]">
                   {roleLabel}

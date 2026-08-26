@@ -1,6 +1,6 @@
-# MarketPulse Authentication — Production Setup
+# Truprice.ng Authentication — Production Setup
 
-MarketPulse now uses one Supabase Auth identity system for every person.
+Truprice.ng uses one Supabase Auth identity system for consumers, field agents, verifiers/admins and the super admin.
 
 ## User-facing login methods
 
@@ -11,66 +11,74 @@ MarketPulse now uses one Supabase Auth identity system for every person.
 
 Every newly-created account starts as `public_user`. A browser user can never choose Field Agent, Verifier/Admin or Super Admin during signup.
 
-## Role routing
+## Google OAuth implementation
 
-After Supabase restores a successful session:
+The frontend implementation is already complete. The auth modal checks Supabase `/auth/v1/settings`; when the Google provider is enabled, the Google button becomes active automatically.
 
-- `public_user` → Consumer Home
-- `field_agent` → Agent Dashboard
-- `verifier_admin` → Admin Overview / Verification
-- `super_admin` → Admin Overview + Users & Access + Catalog
+The application starts OAuth with:
 
-Only the existing MarketPulse `super_admin` can promote a registered account to `field_agent` or `verifier_admin`. Staff promotion is blocked until the Supabase identity is confirmed.
+- provider: `google`
+- return URL: the current browser origin
+- Google account chooser: enabled
 
-## Google OAuth activation
+No Google Client Secret is stored in the frontend.
 
-The frontend is already implemented. It reads `/auth/v1/settings` when the auth modal opens. If Google is enabled in Supabase, the Google button becomes active automatically. No new frontend build is required after provider activation.
+## Google Auth Platform configuration
 
-To activate Google in Supabase, create a **Google Web OAuth client** and configure it in Supabase Authentication → Providers → Google.
+Create a **Web application** OAuth client in Google Auth Platform.
 
-Google OAuth client settings:
+Authorized JavaScript origins should include the real production origin, for example:
 
-- **Authorized JavaScript origin:** the final deployed MarketPulse origin, for example `https://marketpluse.ai.studio`
-- **Authorized redirect URI:** `https://iqavukfmeahqnovrkcuo.supabase.co/auth/v1/callback`
+- `https://truprice.ng` once the custom domain is attached
+- the current Vercel production origin while it remains in use
+- `http://localhost:3000` only for development
 
-Then configure the Google **Client ID** and **Client Secret** on the Supabase Google provider.
+Authorized redirect URI:
 
-Do not put the Google Client Secret in this frontend project.
+- `https://iqavukfmeahqnovrkcuo.supabase.co/auth/v1/callback`
+
+Copy the Google **Client ID** and **Client Secret** into Supabase Authentication → Providers → Google and enable the provider.
+
+Never commit the Google Client Secret to GitHub or expose it through a `VITE_` environment variable.
 
 ## Supabase URL configuration
 
 In Supabase Authentication → URL Configuration:
 
-- **Site URL:** final deployed MarketPulse URL
-- **Redirect URLs:** include the same final MarketPulse URL used by email confirmation, password recovery and Google OAuth return flow.
+- **Site URL:** the canonical Truprice.ng production origin
+- **Redirect URLs:** include the production origin used by Google OAuth, email confirmation and password recovery
+- keep localhost only if local development still needs it
 
 ## OAuth profile behavior
 
-When Google creates a new Supabase user, the database trigger automatically copies:
+When Google creates a new Supabase user, the database profile trigger copies supported identity information such as:
 
 - email
 - Google display name
 - Google avatar/picture
 - auth provider (`google`)
 
-into `public.profiles`. The role remains `public_user`.
+The application role remains `public_user`.
 
-If Terms/Privacy have not yet been accepted, MarketPulse blocks continuation with the legal-consent modal until the user accepts them.
+If Terms/Privacy have not yet been accepted, Truprice.ng blocks continuation with the legal-consent modal until the user accepts them.
 
-Users can later update personal profile fields (name, photo, phone, gender, date of birth, city/state/country, bio), but cannot change their own role, account status or auth provider.
+Users can later update normal profile fields, but cannot change their own role, account status or auth provider.
+
+## Required production test
+
+After enabling Google:
+
+1. Open Truprice.ng in an incognito/private browser window.
+2. Select **Continue with Google**.
+3. Sign in with a Google account that has never used Truprice.ng.
+4. Confirm the browser returns to the production origin.
+5. Confirm a `public_user` profile is created with the Google identity information.
+6. Confirm Terms/Privacy acceptance appears where required.
+7. Log out and sign in again with Google.
+8. Confirm the user cannot access Field Agent/Admin areas.
 
 ## Production email delivery
 
-Email/password authentication is implemented in the frontend and Supabase Auth, including signup confirmation, resend confirmation, login, forgot password and password recovery.
+Email/password authentication is separate from Google OAuth. For public email signup and password recovery, configure custom SMTP in Supabase rather than relying on development mail delivery.
 
-For real public users, configure **custom SMTP** in Supabase Authentication → Emails / SMTP Settings. Supabase's built-in SMTP service is for development and is not suitable for public production delivery; without custom SMTP it may refuse confirmation/reset emails to addresses outside the project team.
-
-Typical SMTP providers supported by Supabase include Resend, AWS SES, Postmark, SendGrid, ZeptoMail and Brevo. Keep SMTP credentials only in Supabase; they do not belong in this frontend project.
-
-Recommended launch behavior:
-
-- Google OAuth: primary fast signup/login once the Google provider is enabled.
-- Email + password: secondary login/signup path once custom SMTP is configured.
-- Both create the same MarketPulse identity and the same `public_user` role.
-
-Enabling Google OAuth or changing SMTP later does **not** require another MarketPulse frontend code change. They are Supabase/Auth provider settings.
+Google OAuth should be the primary fast signup/login path; email/password remains the secondary authentication method.

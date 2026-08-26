@@ -49,7 +49,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isPasswordRecovery) {
       setErrorMsg(null);
-      setInfoMsg('Choose a new password for your MarketPulse account.');
+      setInfoMsg('Choose a new password for your Truprice.ng account.');
       setPassword('');
       setConfirmPassword('');
     }
@@ -66,11 +66,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const handleGoogle = async () => {
     resetMessages();
     if (!isSupabaseConfigured) {
-      setErrorMsg('MarketPulse authentication is temporarily unavailable.');
+      setErrorMsg('Truprice.ng authentication is temporarily unavailable.');
       return;
     }
     if (googleAvailable !== true) {
-      setErrorMsg('Google sign-in has not been enabled on the MarketPulse authentication project yet. You can use email and password now.');
+      setErrorMsg('Google sign-in has not been enabled on the Truprice.ng authentication project yet. You can use email and password now.');
       return;
     }
     setGoogleLoading(true);
@@ -89,7 +89,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     resetMessages();
 
     if (!isSupabaseConfigured) {
-      setErrorMsg('MarketPulse authentication is temporarily unavailable.');
+      setErrorMsg('Truprice.ng authentication is temporarily unavailable.');
       return;
     }
 
@@ -171,7 +171,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     : mode === 'signin'
       ? 'Welcome Back'
       : mode === 'signup'
-        ? 'Create Your MarketPulse Account'
+        ? 'Create Your Truprice.ng Account'
         : 'Reset Your Password';
 
   const subtitle = isPasswordRecovery
@@ -256,7 +256,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                     <input type="checkbox" checked={acceptLegal} onChange={(e)=>setAcceptLegal(e.target.checked)} className="mt-1"/>
                     <span>I agree to the <button type="button" onClick={()=>setLegalDocument('terms')} className="font-bold text-[#006b3f] underline">Terms of Use</button> and acknowledge the <button type="button" onClick={()=>setLegalDocument('privacy')} className="font-bold text-[#006b3f] underline">Privacy Notice</button>.</span>
                   </label>
-                  <p className="text-[10px] leading-4 text-[#6e7a70] dark:text-[#bdcabe]">New accounts always start as Consumer. We will send a confirmation email before staff access can ever be granted. Field Agent and Verifier/Admin access can only be assigned later by the MarketPulse super admin.</p>
+                  <p className="text-[10px] leading-4 text-[#6e7a70] dark:text-[#bdcabe]">New accounts always start as Consumer. We will send a confirmation email before staff access can ever be granted. Field Agent and Verifier/Admin access can only be assigned later by the Truprice.ng super admin.</p>
                 </>
               )}
 
@@ -278,7 +278,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
             {!isPasswordRecovery && mode !== 'forgot' && googleAvailable === true && (
               <p className="text-[10px] leading-4 text-center text-[#6e7a70] dark:text-[#bdcabe]">
-                If Google creates a new MarketPulse account, you will review the Terms and Privacy Notice before continuing.
+                If Google creates a new Truprice.ng account, you will review the Terms and Privacy Notice before continuing.
               </p>
             )}
           </div>

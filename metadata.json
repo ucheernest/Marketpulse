@@ -1,5 +1,5 @@
 {
-  "name": "MarketPulse",
+  "name": "Truprice.ng",
   "description": "Verified Nigerian market price intelligence with consumer search, field-agent evidence capture and admin verification.",
   "requestFramePermissions": ["geolocation", "camera"]
 }

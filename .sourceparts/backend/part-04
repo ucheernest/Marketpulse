@@ -19,9 +19,9 @@ export async function getAuthProviderAvailability(): Promise<{ google: boolean }
   if (!config) return { google: false };
   try {
     const response = await fetch(`${config.url}/auth/v1/settings`, { headers: { apikey: config.publishableKey }, cache: 'no-store' });
-    if (!response.ok) return { google: false };
-    const settings = await response.json();
-    return { google: Boolean(settings?.external?.google) };
+    // Keep Google actionable whenever the Auth service is reachable. The OAuth request itself
+    // is the authoritative test and will surface an exact provider/callback/configuration error.
+    return { google: response.ok };
   } catch { return { google: false }; }
 }
 
@@ -34,7 +34,7 @@ export async function signInWithGoogleOAuth(): Promise<void> {
 export async function signInWithSupabase(email:string,pass:string) {
   const supabase=getSupabase(); if(!supabase) throw new Error('Supabase is not configured yet.');
   const {data,error}=await supabase.auth.signInWithPassword({email:email.trim().toLowerCase(),password:pass}); if(error) throw error;
-  const profile=await getAuthenticatedProfile(); if(profile&&!profile.is_active){await supabase.auth.signOut();throw new Error('This MarketPulse account is currently inactive.');}
+  const profile=await getAuthenticatedProfile(); if(profile&&!profile.is_active){await supabase.auth.signOut();throw new Error('This Truprice.ng account is currently inactive.');}
   if(profile) await supabase.rpc('touch_my_profile'); return {...data,profile};
 }
 
